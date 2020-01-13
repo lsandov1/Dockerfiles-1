@@ -2,9 +2,7 @@ FROM clearlinux:latest AS build
 WORKDIR /home
 
 include(dars-build-tools.m4)
-
-# TODO
-# include(mkl.m4)
+include(mkl.m4)
 
 FROM clearlinux/os-core:latest
 LABEL maintainer=otc-swstacks@intel.com
