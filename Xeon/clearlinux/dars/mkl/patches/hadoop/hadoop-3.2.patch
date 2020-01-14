@@ -1,0 +1,2687 @@
+---
+ 0001-Change-protobuf-version.patch            |   14 +-
+ 0001-Integrate-JDK11.patch                    |  484 ++++++
+ 0001-Java_home-on-CLR.patch                   |   36 +-
+ 0001-Stateless-v2.patch                       |  200 +--
+ ...NodeManager-OOM-Listener-Fails-Compi.patch |   88 +
+ Makefile                                      |    5 +-
+ apache-hadoop.spec                            | 1524 +++++++----------
+ buildreq_add                                  |   34 -
+ protobuf-3.6.1-hadoop-3.2.0-On-CLR.patch      |  125 ++
+ upstream                                      |    2 +-
+ 10 files changed, 1395 insertions(+), 1117 deletions(-)
+ create mode 100644 0001-Integrate-JDK11.patch
+ create mode 100644 0001-YARN-8498.-Yarn-NodeManager-OOM-Listener-Fails-Compi.patch
+ create mode 100644 protobuf-3.6.1-hadoop-3.2.0-On-CLR.patch
+
+diff --git a/0001-Change-protobuf-version.patch b/0001-Change-protobuf-version.patch
+index 843ba6a..2798a73 100644
+--- a/0001-Change-protobuf-version.patch
++++ b/0001-Change-protobuf-version.patch
+@@ -1,6 +1,6 @@
+-From f54a1598569fc683346d55e2a6c0c610f8474cef Mon Sep 17 00:00:00 2001
+-From: Athenas Jimenez Gonzalez <athenas.jimenez.gonzalez@intel.com>
+-Date: Tue, 12 Sep 2017 15:44:28 +0000
++From 9ec2ee538079df98f2c8542480b714be0020198b Mon Sep 17 00:00:00 2001
++From: Leonardo Sandoval <leonardo.sandoval.gonzalez@linux.intel.com>
++Date: Tue, 12 Mar 2019 09:35:54 -0600
+ Subject: [PATCH] Change protobuf version
+ 
+ ---
+@@ -8,10 +8,10 @@ Subject: [PATCH] Change protobuf version
+  1 file changed, 1 insertion(+), 1 deletion(-)
+ 
+ diff --git a/hadoop-project/pom.xml b/hadoop-project/pom.xml
+-index 979d323..a01779b 100644
++index 9d00fe296bc..2b41321cbb8 100644
+ --- a/hadoop-project/pom.xml
+ +++ b/hadoop-project/pom.xml
+-@@ -72,7 +72,7 @@
++@@ -83,7 +83,7 @@
+  
+      <!-- ProtocolBuffer version, used to verify the protoc version and -->
+      <!-- define the protobuf JAR version                               -->
+@@ -19,7 +19,7 @@ index 979d323..a01779b 100644
+ +    <protobuf.version>3.6.1</protobuf.version>
+      <protoc.path>${env.HADOOP_PROTOC_PATH}</protoc.path>
+  
+-     <zookeeper.version>3.4.6</zookeeper.version>
++     <zookeeper.version>3.4.13</zookeeper.version>
+ -- 
+-2.14.1
++2.20.1
+ 
+diff --git a/0001-Integrate-JDK11.patch b/0001-Integrate-JDK11.patch
+new file mode 100644
+index 0000000..1000592
+--- /dev/null
++++ b/0001-Integrate-JDK11.patch
+@@ -0,0 +1,484 @@
++From fa0265a81d1c8b18c55509bb3b0b8ba8e49796af Mon Sep 17 00:00:00 2001
++From: Leonardo Sandoval <leonardo.sandoval.gonzalez@linux.intel.com>
++Date: Mon, 11 Mar 2019 11:13:58 -0600
++Subject: [PATCH] Integrate JDK11
++
++Thanks to Uma for patches. created by the following patch
++
++curl -s -o HADOOP-15935.001.patch  https://issues.apache.org/jira/secure/attachment/12952391/HADOOP-15935.001.patch
++git apply HADOOP-15935.001.patch
++
++curl -s -o HADOOP-15904.1.patch https://issues.apache.org/jira/secure/attachment/12947000/HADOOP-15904.1.patch
++git apply HADOOP-15904.1.patch
++
++curl -s -o HADOOP-15902.2.patch https://issues.apache.org/jira/secure/attachment/12947045/HADOOP-15902.2.patch
++git apply HADOOP-15902.2.patch
++
++curl -s -o HADOOP-15787.02.patch https://issues.apache.org/jira/secure/attachment/12955661/HADOOP-15787.02.patch
++git apply HADOOP-15787.02.patch
++
++curl -s -o HADOOP-15936.01.patch https://issues.apache.org/jira/secure/attachment/12948297/HADOOP-15936.01.patch
++git apply HADOOP-15936.01.patch
++
++curl -s -o HADOOP-15937.01.patch https://issues.apache.org/jira/secure/attachment/12953949/HADOOP-15937.01.patch
++git apply HADOOP-15937.01.patch
++
++curl -s -o HADOOP-15941.2.patch https://issues.apache.org/jira/secure/attachment/12954134/HADOOP-15941.2.patch
++git apply --binary -v --stat --whitespace=fix -p1 --exclude hadoop-common-project/hadoop-common/src/main/java/org/apache/hadoop/log/LogThrottlingHelper.java --apply HADOOP-15941.2.patch
++
++curl -s -o HADOOP-15941-addendum.2.patch https://issues.apache.org/jira/secure/attachment/12954920/HADOOP-15941-addendum.2.patch
++git apply HADOOP-15941-addendum.2.patch
++
++curl -s -o HADOOP-16046.patch https://issues.apache.org/jira/secure/attachment/12955162/HADOOP-16046.patch
++git apply -p 0 HADOOP-16046.patch
++
++curl -s -o HADOOP-15938.002.patch https://issues.apache.org/jira/secure/attachment/12957530/HADOOP-15938.002.patch
++git apply HADOOP-15938.002.patch
++
++curl -o HADOOP-15775.06.patch https://issues.apache.org/jira/secure/attachment/12942503/HADOOP-15775.06.patch
++patch -p 1 < HADOOP-15775.06.patch
++
++curl -o HADOOP-15767.1.patch https://issues.apache.org/jira/secure/attachment/12941170/HADOOP-15767.1.patch
++patch -p 1 < HADOOP-15767.1.patch
++---
++ .../hadoop-client-runtime/pom.xml             |  7 ++
++ hadoop-common-project/hadoop-common/pom.xml   | 84 +---------------
++ .../ipc/metrics/RpcDetailedMetrics.java       |  2 +-
++ .../java/org/apache/hadoop/ipc/TestIPC.java   | 18 ++--
++ .../diskbalancer/planner/package-info.java    |  2 +-
++ .../hadoop/test/MiniDFSClusterManager.java    |  2 +-
++ .../mapreduce/MiniHadoopClusterManager.java   |  2 +-
++ .../pom.xml                                   | 20 ----
++ hadoop-maven-plugins/pom.xml                  |  2 +-
++ hadoop-project/pom.xml                        | 95 ++++++++++++-------
++ .../hadoop-yarn/hadoop-yarn-common/pom.xml    |  6 +-
++ 11 files changed, 92 insertions(+), 148 deletions(-)
++
++diff --git a/hadoop-client-modules/hadoop-client-runtime/pom.xml b/hadoop-client-modules/hadoop-client-runtime/pom.xml
++index 3b851083a44..33423178eb0 100644
++--- a/hadoop-client-modules/hadoop-client-runtime/pom.xml
+++++ b/hadoop-client-modules/hadoop-client-runtime/pom.xml
++@@ -309,6 +309,13 @@
++                         <exclude>**/pom.xml</exclude>
++                       </excludes>
++                     </relocation>
+++                    <relocation>
+++                      <pattern>javax/activation/</pattern>
+++                      <shadedPattern>${shaded.dependency.prefix}.javax.activation.</shadedPattern>
+++                      <excludes>
+++                        <exclude>**/pom.xml</exclude>
+++                      </excludes>
+++                    </relocation>
++                     <relocation>
++                       <pattern>javax/ws/</pattern>
++                       <shadedPattern>${shaded.dependency.prefix}.javax.ws.</shadedPattern>
++diff --git a/hadoop-common-project/hadoop-common/pom.xml b/hadoop-common-project/hadoop-common/pom.xml
++index 2752086518a..f139d1e7ff0 100644
++--- a/hadoop-common-project/hadoop-common/pom.xml
+++++ b/hadoop-common-project/hadoop-common/pom.xml
++@@ -90,6 +90,11 @@
++       <artifactId>javax.servlet-api</artifactId>
++       <scope>compile</scope>
++     </dependency>
+++    <dependency>
+++      <groupId>javax.activation</groupId>
+++      <artifactId>javax.activation-api</artifactId>
+++      <scope>runtime</scope>
+++    </dependency>
++     <dependency>
++       <groupId>org.eclipse.jetty</groupId>
++       <artifactId>jetty-server</artifactId>
++@@ -646,48 +651,6 @@
++               </execution>
++             </executions>
++           </plugin>
++-          <plugin>
++-            <groupId>org.codehaus.mojo</groupId>
++-            <artifactId>native-maven-plugin</artifactId>
++-            <executions>
++-              <execution>
++-                <phase>compile</phase>
++-                <goals>
++-                  <goal>javah</goal>
++-                </goals>
++-                <configuration>
++-                  <javahPath>${env.JAVA_HOME}/bin/javah</javahPath>
++-                  <javahClassNames>
++-                    <javahClassName>org.apache.hadoop.io.compress.zlib.ZlibCompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.zlib.ZlibDecompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.bzip2.Bzip2Compressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.bzip2.Bzip2Decompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.security.JniBasedUnixGroupsMapping</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.nativeio.NativeIO</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.nativeio.SharedFileDescriptorFactory</javahClassName>
++-                    <javahClassName>org.apache.hadoop.security.JniBasedUnixGroupsNetgroupMapping</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.snappy.SnappyCompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.snappy.SnappyDecompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.zstd.ZStandardCompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.zstd.ZStandardDecompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.lz4.Lz4Compressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.lz4.Lz4Decompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.erasurecode.ErasureCodeNative</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.erasurecode.rawcoder.NativeRSRawEncoder</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.erasurecode.rawcoder.NativeRSRawDecoder</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.erasurecode.rawcoder.NativeXORRawEncoder</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.erasurecode.rawcoder.NativeXORRawDecoder</javahClassName>
++-                    <javahClassName>org.apache.hadoop.crypto.OpensslCipher</javahClassName>
++-                    <javahClassName>org.apache.hadoop.crypto.random.OpensslSecureRandom</javahClassName>
++-                    <javahClassName>org.apache.hadoop.util.NativeCrc32</javahClassName>
++-                    <javahClassName>org.apache.hadoop.net.unix.DomainSocket</javahClassName>
++-                    <javahClassName>org.apache.hadoop.net.unix.DomainSocketWatcher</javahClassName>
++-                  </javahClassNames>
++-                  <javahOutputDirectory>${project.build.directory}/native/javah</javahOutputDirectory>
++-                </configuration>
++-              </execution>
++-            </executions>
++-          </plugin>
++           <plugin>
++             <groupId>org.apache.hadoop</groupId>
++             <artifactId>hadoop-maven-plugins</artifactId>
++@@ -802,43 +765,6 @@
++               </execution>
++             </executions>
++           </plugin>
++-          <plugin>
++-            <groupId>org.codehaus.mojo</groupId>
++-            <artifactId>native-maven-plugin</artifactId>
++-            <executions>
++-              <execution>
++-                <phase>compile</phase>
++-                <goals>
++-                  <goal>javah</goal>
++-                </goals>
++-                <configuration>
++-                  <javahPath>${env.JAVA_HOME}/bin/javah</javahPath>
++-                  <javahClassNames>
++-                    <javahClassName>org.apache.hadoop.io.compress.zlib.ZlibCompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.zlib.ZlibDecompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.security.JniBasedUnixGroupsMapping</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.nativeio.NativeIO</javahClassName>
++-                    <javahClassName>org.apache.hadoop.security.JniBasedUnixGroupsNetgroupMapping</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.snappy.SnappyCompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.snappy.SnappyDecompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.zstd.ZStandardCompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.zstd.ZStandardDecompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.lz4.Lz4Compressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.compress.lz4.Lz4Decompressor</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.erasurecode.ErasureCodeNative</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.erasurecode.rawcoder.NativeRSRawEncoder</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.erasurecode.rawcoder.NativeRSRawDecoder</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.erasurecode.rawcoder.NativeXORRawEncoder</javahClassName>
++-                    <javahClassName>org.apache.hadoop.io.erasurecode.rawcoder.NativeXORRawDecoder</javahClassName>
++-                    <javahClassName>org.apache.hadoop.crypto.OpensslCipher</javahClassName>
++-                    <javahClassName>org.apache.hadoop.crypto.random.OpensslSecureRandom</javahClassName>
++-                    <javahClassName>org.apache.hadoop.util.NativeCrc32</javahClassName>
++-                  </javahClassNames>
++-                  <javahOutputDirectory>${project.build.directory}/native/javah</javahOutputDirectory>
++-                </configuration>
++-              </execution>
++-            </executions>
++-          </plugin>
++           <plugin>
++             <groupId>org.codehaus.mojo</groupId>
++             <artifactId>exec-maven-plugin</artifactId>
++diff --git a/hadoop-common-project/hadoop-common/src/main/java/org/apache/hadoop/ipc/metrics/RpcDetailedMetrics.java b/hadoop-common-project/hadoop-common/src/main/java/org/apache/hadoop/ipc/metrics/RpcDetailedMetrics.java
++index 6ed57ec6d97..0160b0e5b71 100644
++--- a/hadoop-common-project/hadoop-common/src/main/java/org/apache/hadoop/ipc/metrics/RpcDetailedMetrics.java
+++++ b/hadoop-common-project/hadoop-common/src/main/java/org/apache/hadoop/ipc/metrics/RpcDetailedMetrics.java
++@@ -66,7 +66,7 @@ public void init(Class<?> protocol) {
++ 
++   /**
++    * Add an RPC processing time sample
++-   * @param name  of the RPC call
+++   * @param name of the RPC call
++    * @param processingTime  the processing time
++    */
++   //@Override // some instrumentation interface
++diff --git a/hadoop-common-project/hadoop-common/src/test/java/org/apache/hadoop/ipc/TestIPC.java b/hadoop-common-project/hadoop-common/src/test/java/org/apache/hadoop/ipc/TestIPC.java
++index 19314c1d501..6c74941c413 100644
++--- a/hadoop-common-project/hadoop-common/src/test/java/org/apache/hadoop/ipc/TestIPC.java
+++++ b/hadoop-common-project/hadoop-common/src/test/java/org/apache/hadoop/ipc/TestIPC.java
++@@ -23,7 +23,6 @@
++ import static org.junit.Assert.assertNotNull;
++ import static org.junit.Assert.assertTrue;
++ import static org.junit.Assert.fail;
++-import static org.mockito.Matchers.anyInt;
++ import static org.mockito.Mockito.doAnswer;
++ import static org.mockito.Mockito.doThrow;
++ import static org.mockito.Mockito.mock;
++@@ -590,6 +589,16 @@ public void testSocketFactoryException() throws IOException {
++     }
++   }
++ 
+++  /**
+++   * Mock socket class to help inject an exception for HADOOP-7428.
+++   */
+++  static class MockSocket extends Socket {
+++    @Override
+++    public synchronized void setSoTimeout(int timeout) {
+++      throw new RuntimeException("Injected fault");
+++    }
+++  }
+++
++   /**
++    * Test that, if a RuntimeException is thrown after creating a socket
++    * but before successfully connecting to the IPC server, that the
++@@ -603,11 +612,8 @@ public void testRTEDuringConnectionSetup() throws IOException {
++     SocketFactory spyFactory = spy(NetUtils.getDefaultSocketFactory(conf));
++     Mockito.doAnswer(new Answer<Socket>() {
++       @Override
++-      public Socket answer(InvocationOnMock invocation) throws Throwable {
++-        Socket s = spy((Socket)invocation.callRealMethod());
++-        doThrow(new RuntimeException("Injected fault")).when(s)
++-          .setSoTimeout(anyInt());
++-        return s;
+++      public Socket answer(InvocationOnMock invocation) {
+++        return new MockSocket();
++       }
++     }).when(spyFactory).createSocket();
++       
++diff --git a/hadoop-hdfs-project/hadoop-hdfs/src/main/java/org/apache/hadoop/hdfs/server/diskbalancer/planner/package-info.java b/hadoop-hdfs-project/hadoop-hdfs/src/main/java/org/apache/hadoop/hdfs/server/diskbalancer/planner/package-info.java
++index 0ad1cd9a89b..4df9ba3505e 100644
++--- a/hadoop-hdfs-project/hadoop-hdfs/src/main/java/org/apache/hadoop/hdfs/server/diskbalancer/planner/package-info.java
+++++ b/hadoop-hdfs-project/hadoop-hdfs/src/main/java/org/apache/hadoop/hdfs/server/diskbalancer/planner/package-info.java
++@@ -29,7 +29,7 @@
++  *
++  * while(current.isBalancingNeeded(thresholdValue)) {
++  *
++- *   // Creates a plan , like move 20 GB data from v1 -> v2
+++ *   // Creates a plan , like move 20 GB data from v1 {@literal ->} v2
++  *   Step step = planner.plan(current, thresholdValue);
++  *
++  *   // we add that to our plan
++diff --git a/hadoop-hdfs-project/hadoop-hdfs/src/test/java/org/apache/hadoop/test/MiniDFSClusterManager.java b/hadoop-hdfs-project/hadoop-hdfs/src/test/java/org/apache/hadoop/test/MiniDFSClusterManager.java
++index 1d06616f24c..b26c1d61ec5 100644
++--- a/hadoop-hdfs-project/hadoop-hdfs/src/test/java/org/apache/hadoop/test/MiniDFSClusterManager.java
+++++ b/hadoop-hdfs-project/hadoop-hdfs/src/test/java/org/apache/hadoop/test/MiniDFSClusterManager.java
++@@ -127,7 +127,7 @@ private void sleepForever() {
++           LOG.info("Cluster is no longer up, exiting");
++           return;
++         }
++-      } catch (InterruptedException _) {
+++      } catch (InterruptedException e) {
++         // nothing
++       }
++     }
++diff --git a/hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-mapreduce-client-jobclient/src/test/java/org/apache/hadoop/mapreduce/MiniHadoopClusterManager.java b/hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-mapreduce-client-jobclient/src/test/java/org/apache/hadoop/mapreduce/MiniHadoopClusterManager.java
++index d29dd344e34..1d1c08347cc 100644
++--- a/hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-mapreduce-client-jobclient/src/test/java/org/apache/hadoop/mapreduce/MiniHadoopClusterManager.java
+++++ b/hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-mapreduce-client-jobclient/src/test/java/org/apache/hadoop/mapreduce/MiniHadoopClusterManager.java
++@@ -137,7 +137,7 @@ private void sleepForever() {
++     while (true) {
++       try {
++         Thread.sleep(1000 * 60);
++-      } catch (InterruptedException _) {
+++      } catch (InterruptedException e) {
++         // nothing
++       }
++     }
++diff --git a/hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-mapreduce-client-nativetask/pom.xml b/hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-mapreduce-client-nativetask/pom.xml
++index 88bb036290a..4ad9d72dfd8 100644
++--- a/hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-mapreduce-client-nativetask/pom.xml
+++++ b/hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-mapreduce-client-nativetask/pom.xml
++@@ -139,26 +139,6 @@
++               </execution>
++             </executions>
++           </plugin>
++-          <plugin>
++-            <groupId>org.codehaus.mojo</groupId>
++-            <artifactId>native-maven-plugin</artifactId>
++-            <executions>
++-              <execution>
++-                <phase>compile</phase>
++-                <goals>
++-                  <goal>javah</goal>
++-                </goals>
++-                <configuration>
++-                  <javahPath>${env.JAVA_HOME}/bin/javah</javahPath>
++-                  <javahClassNames>
++-                    <javaClassName>org.apache.hadoop.mapred.nativetask.NativeBatchProcessor</javaClassName>
++-                    <javaClassName>org.apache.hadoop.mapred.nativetask.NativeRuntime</javaClassName>
++-                  </javahClassNames>
++-                  <javahOutputDirectory>${project.build.directory}/native/javah</javahOutputDirectory>
++-                </configuration>
++-              </execution>
++-            </executions>
++-          </plugin>
++           <plugin>
++             <groupId>org.apache.maven.plugins</groupId>
++             <artifactId>maven-antrun-plugin</artifactId>
++diff --git a/hadoop-maven-plugins/pom.xml b/hadoop-maven-plugins/pom.xml
++index fb0545d7c28..7eb29410842 100644
++--- a/hadoop-maven-plugins/pom.xml
+++++ b/hadoop-maven-plugins/pom.xml
++@@ -27,7 +27,7 @@
++   <name>Apache Hadoop Maven Plugins</name>
++   <properties>
++     <maven.dependency.version>3.0.5</maven.dependency.version>
++-    <maven.plugin-tools.version>3.5.1</maven.plugin-tools.version>
+++    <maven.plugin-tools.version>3.6.0</maven.plugin-tools.version>
++   </properties>
++   <dependencies>
++     <dependency>
++diff --git a/hadoop-project/pom.xml b/hadoop-project/pom.xml
++index 941f510dae8..9d00fe296bc 100644
++--- a/hadoop-project/pom.xml
+++++ b/hadoop-project/pom.xml
++@@ -135,7 +135,7 @@
++     <maven-compiler-plugin.version>3.1</maven-compiler-plugin.version>
++     <maven-install-plugin.version>2.5.1</maven-install-plugin.version>
++     <maven-resources-plugin.version>2.6</maven-resources-plugin.version>
++-    <maven-shade-plugin.version>3.2.0</maven-shade-plugin.version>
+++    <maven-shade-plugin.version>3.2.1</maven-shade-plugin.version>
++     <maven-jar-plugin.version>2.5</maven-jar-plugin.version>
++     <maven-war-plugin.version>3.1.0</maven-war-plugin.version>
++     <maven-source-plugin.version>2.3</maven-source-plugin.version>
++@@ -144,7 +144,6 @@
++     <build-helper-maven-plugin.version>1.9</build-helper-maven-plugin.version>
++     <exec-maven-plugin.version>1.3.1</exec-maven-plugin.version>
++     <make-maven-plugin.version>1.0-beta-1</make-maven-plugin.version>
++-    <native-maven-plugin.version>1.0-alpha-8</native-maven-plugin.version>
++     <surefire.fork.timeout>900</surefire.fork.timeout>
++     <aws-java-sdk.version>1.11.375</aws-java-sdk.version>
++     <hsqldb.version>2.3.4</hsqldb.version>
++@@ -1458,6 +1457,11 @@
++         <artifactId>jcodings</artifactId>
++         <version>1.0.13</version>
++       </dependency>
+++      <dependency>
+++        <groupId>javax.activation</groupId>
+++        <artifactId>javax.activation-api</artifactId>
+++        <version>1.2.0</version>
+++      </dependency>
++     </dependencies>
++   </dependencyManagement>
++ 
++@@ -1564,11 +1568,6 @@
++             </dependency>
++           </dependencies>
++         </plugin>
++-        <plugin>
++-          <groupId>org.codehaus.mojo</groupId>
++-          <artifactId>native-maven-plugin</artifactId>
++-          <version>${native-maven-plugin.version}</version>
++-        </plugin>
++         <plugin>
++           <groupId>org.codehaus.mojo</groupId>
++           <artifactId>make-maven-plugin</artifactId>
++@@ -1649,35 +1648,6 @@
++           </execution>
++         </executions>
++       </plugin>
++-      <plugin>
++-        <groupId>org.codehaus.mojo</groupId>
++-        <artifactId>animal-sniffer-maven-plugin</artifactId>
++-        <version>1.16</version>
++-        <executions>
++-          <execution>
++-            <id>signature-check</id>
++-            <phase>verify</phase>
++-            <goals>
++-              <goal>check</goal>
++-            </goals>
++-          </execution>
++-        </executions>
++-        <configuration>
++-          <signature>
++-            <groupId>org.codehaus.mojo.signature</groupId>
++-            <artifactId>java18</artifactId>
++-            <version>1.0</version>
++-          </signature>
++-          <ignores>
++-            <ignore>sun.misc.*</ignore>
++-            <ignore>sun.net.*</ignore>
++-            <ignore>sun.nio.ch.*</ignore>
++-            <ignore>com.sun.javadoc.*</ignore>
++-            <ignore>com.sun.tools.*</ignore>
++-            <ignore>java.lang.invoke.*</ignore>
++-          </ignores>
++-        </configuration>
++-      </plugin>
++       <plugin>
++         <groupId>org.apache.maven.plugins</groupId>
++         <artifactId>maven-antrun-plugin</artifactId>
++@@ -1981,6 +1951,59 @@
++         </dependencies>
++       </dependencyManagement>
++     </profile>
+++    <profile>
+++      <id>jdk11</id>
+++      <activation>
+++        <jdk>[11,)</jdk>
+++      </activation>
+++      <build>
+++        <plugins>
+++          <plugin>
+++            <groupId>org.apache.maven.plugins</groupId>
+++            <artifactId>maven-javadoc-plugin</artifactId>
+++            <configuration>
+++              <additionalOptions>
+++                <!-- TODO: remove -html4 option to generate html5 docs when we stop supporting JDK8 -->
+++                <additionalOption>-html4</additionalOption>
+++                <additionalOption>--add-exports</additionalOption>
+++                <additionalOption>java.naming/com.sun.jndi.ldap=ALL-UNNAMED</additionalOption>
+++              </additionalOptions>
+++            </configuration>
+++          </plugin>
+++          <plugin>
+++            <groupId>org.apache.maven.plugins</groupId>
+++            <artifactId>maven-compiler-plugin</artifactId>
+++            <configuration>
+++              <compilerArgs combine.children="append">
+++                <arg>--add-exports</arg>
+++                <arg>java.naming/com.sun.jndi.ldap=ALL-UNNAMED</arg>
+++              </compilerArgs>
+++            </configuration>
+++          </plugin>
+++        </plugins>
+++      </build>
+++    </profile>
+++    <profile>
+++      <id>native</id>
+++      <activation>
+++        <activeByDefault>false</activeByDefault>
+++      </activation>
+++      <build>
+++        <plugins>
+++          <plugin>
+++            <groupId>org.apache.maven.plugins</groupId>
+++            <artifactId>maven-compiler-plugin</artifactId>
+++            <configuration>
+++              <!-- add flags to generate native headers -->
+++              <compilerArgs combine.children="append">
+++                <arg>-h</arg>
+++                <arg>${project.build.directory}/native/javah/</arg>
+++              </compilerArgs>
+++            </configuration>
+++          </plugin>
+++        </plugins>
+++      </build>
+++    </profile>
++   </profiles>
++ 
++   <repositories>
++diff --git a/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-common/pom.xml b/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-common/pom.xml
++index 08f557fe9c4..fa6a462e98d 100644
++--- a/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-common/pom.xml
+++++ b/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-common/pom.xml
++@@ -370,9 +370,11 @@
++             <artifactId>maven-compiler-plugin</artifactId>
++             <configuration>
++               <excludes>
++-                <exclude>src/main/java/org/apache/hadoop/yarn/webapp/hamlet/**</exclude>
++-                <exclude>src/main/test/org/apache/haodop/yarn/webapp/hamlet/**</exclude>
+++                <exclude>org/apache/hadoop/yarn/webapp/hamlet/**</exclude>
++               </excludes>
+++              <testExcludes>
+++                <exclude>org/apache/hadoop/yarn/webapp/hamlet/**</exclude>
+++              </testExcludes>
++             </configuration>
++           </plugin>
++           <plugin>
++-- 
++2.20.1
++
+diff --git a/0001-Java_home-on-CLR.patch b/0001-Java_home-on-CLR.patch
+index 260ebea..89e9798 100644
+--- a/0001-Java_home-on-CLR.patch
++++ b/0001-Java_home-on-CLR.patch
+@@ -1,28 +1,28 @@
+-From a34273328dae8111dbcc8bbdac369d356578a372 Mon Sep 17 00:00:00 2001
+-From: Athenas Jimenez Gonzalez <athenas.jimenez.gonzalez@intel.com>
+-Date: Wed, 5 Apr 2017 21:38:05 +0000
+-Subject: [PATCH] Java_home on CLR
++From 98ea1dc69c4349537432c8340c3e4ed8f38eeab9 Mon Sep 17 00:00:00 2001
++From: Leonardo Sandoval <leonardo.sandoval.gonzalez@linux.intel.com>
++Date: Thu, 24 Jan 2019 14:36:18 -0600
++Subject: [PATCH] hadoop-functions.sh: set JAVA_HOME in ClearLinux
+ 
+ ---
+- hadoop-common-project/hadoop-common/src/main/bin/hadoop-config.sh | 5 +++++
++ .../hadoop-common/src/main/bin/hadoop-functions.sh           | 5 +++++
+  1 file changed, 5 insertions(+)
+ 
+-diff --git a/hadoop-common-project/hadoop-common/src/main/bin/hadoop-config.sh b/hadoop-common-project/hadoop-common/src/main/bin/hadoop-config.sh
+-index e321a5b..6cd84c9 100644
+---- a/hadoop-common-project/hadoop-common/src/main/bin/hadoop-config.sh
+-+++ b/hadoop-common-project/hadoop-common/src/main/bin/hadoop-config.sh
+-@@ -175,6 +175,11 @@ if [[ -z $JAVA_HOME ]]; then
+-     fi
+-   fi
+- 
++diff --git a/hadoop-common-project/hadoop-common/src/main/bin/hadoop-functions.sh b/hadoop-common-project/hadoop-common/src/main/bin/hadoop-functions.sh
++index 847240d..c027971 100755
++--- a/hadoop-common-project/hadoop-common/src/main/bin/hadoop-functions.sh
+++++ b/hadoop-common-project/hadoop-common/src/main/bin/hadoop-functions.sh
++@@ -1451,6 +1451,11 @@ function hadoop_os_tricks
++ ## @return       may exit on failure conditions
++ function hadoop_java_setup
++ {
+ +  # On CLR
+-+  if [ -d /usr/lib/jvm/java-1.8.0-openjdk ]; then
+-+      export JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk
+++  if [ -d /usr/lib/jvm/java-1.11.0-openjdk ]; then
+++      export JAVA_HOME=/usr/lib/jvm/java-1.11.0-openjdk
+ +  fi
+ +
+    # Bail if we did not detect it
+-   if [[ -z $JAVA_HOME ]]; then
+-     echo "Error: JAVA_HOME is not set and could not be found." 1>&2
++   if [[ -z "${JAVA_HOME}" ]]; then
++     hadoop_error "ERROR: JAVA_HOME is not set and could not be found."
+ -- 
+-2.12.2
++2.20.0
+ 
+diff --git a/0001-Stateless-v2.patch b/0001-Stateless-v2.patch
+index a02acf4..94dce91 100644
+--- a/0001-Stateless-v2.patch
++++ b/0001-Stateless-v2.patch
+@@ -1,165 +1,45 @@
+-From f03fbb618cf823dabbbde3efb6d86aa0c6202faf Mon Sep 17 00:00:00 2001
+-From: Athenas Jimenez Gonzalez <athenas.jimenez.gonzalez@intel.com>
+-Date: Mon, 2 Oct 2017 17:13:52 +0000
+-Subject: [PATCH] Stateless v2
++From a18c59e0badbcc46ca0f5c35a971aec1d544bf51 Mon Sep 17 00:00:00 2001
++From: Leonardo Sandoval <leonardo.sandoval.gonzalez@linux.intel.com>
++Date: Fri, 25 Jan 2019 16:50:52 -0600
++Subject: [PATCH] stateless changes
+ 
+ ---
+- .../hadoop-common/src/main/bin/hadoop-config.sh           | 15 +++++++++++----
+- .../hadoop-common/src/main/bin/hadoop-daemon.sh           |  2 +-
+- .../hadoop-kms/src/main/libexec/kms-config.sh             |  2 +-
+- .../hadoop-hdfs-httpfs/src/main/libexec/httpfs-config.sh  |  2 +-
+- hadoop-mapreduce-project/bin/mapred-config.sh             |  2 +-
+- hadoop-yarn-project/hadoop-yarn/bin/yarn                  |  2 +-
+- hadoop-yarn-project/hadoop-yarn/bin/yarn-config.sh        |  7 ++++++-
+- hadoop-yarn-project/hadoop-yarn/bin/yarn-daemon.sh        |  2 +-
+- hadoop-yarn-project/hadoop-yarn/conf/yarn-env.sh          |  2 +-
+- 9 files changed, 24 insertions(+), 12 deletions(-)
++ .../hadoop-common/src/main/bin/hadoop-functions.sh  | 13 +++++++++----
++ 1 file changed, 9 insertions(+), 4 deletions(-)
+ 
+-diff --git a/hadoop-common-project/hadoop-common/src/main/bin/hadoop-config.sh b/hadoop-common-project/hadoop-common/src/main/bin/hadoop-config.sh
+-index fc41f7f..f60d78e 100644
+---- a/hadoop-common-project/hadoop-common/src/main/bin/hadoop-config.sh
+-+++ b/hadoop-common-project/hadoop-common/src/main/bin/hadoop-config.sh
+-@@ -100,12 +100,19 @@ HADOOP_LOGLEVEL="${HADOOP_LOGLEVEL:-INFO}"
+-  
+- # Allow alternate conf dir location.
+- if [ -e "${HADOOP_PREFIX}/conf/hadoop-env.sh" ]; then
+--  DEFAULT_CONF_DIR="conf"
+-+  DEFAULT_CONF_DIR="$HADOOP_PREFIX/conf"
+-+elif [ -e "/etc/hadoop" ]; then
+-+  DEFAULT_CONF_DIR="/etc/hadoop"
+-+  if [ -z "$(ls -A /etc/hadoop)" ]; then
+-+      echo \
+-+          "Error: Directory /etc/hadoop is empty"
+-+      exit 1
+-+  fi
+- else
+--  DEFAULT_CONF_DIR="etc/hadoop"
+-+  DEFAULT_CONF_DIR="/usr/share/defaults/hadoop"
+- fi
+- 
+--export HADOOP_CONF_DIR="${HADOOP_CONF_DIR:-$HADOOP_PREFIX/$DEFAULT_CONF_DIR}"
+-+export HADOOP_CONF_DIR="${HADOOP_CONF_DIR:-$DEFAULT_CONF_DIR}"
+- 
+- # User can specify hostnames or a file where the hostnames are (not both)
+- if [[ ( "$HADOOP_SLAVES" != '' ) && ( "$HADOOP_SLAVE_NAMES" != '' ) ]] ; then
+-@@ -218,7 +225,7 @@ CLASSPATH=${CLASSPATH}:$HADOOP_COMMON_HOME/$HADOOP_COMMON_DIR'/*'
+- 
+- # default log directory & file
+- if [ "$HADOOP_LOG_DIR" = "" ]; then
+--  HADOOP_LOG_DIR="$HADOOP_PREFIX/logs"
+-+  HADOOP_LOG_DIR="/var/log/hadoop"
+- fi
+- if [ "$HADOOP_LOGFILE" = "" ]; then
+-   HADOOP_LOGFILE='hadoop.log'
+-diff --git a/hadoop-common-project/hadoop-common/src/main/bin/hadoop-daemon.sh b/hadoop-common-project/hadoop-common/src/main/bin/hadoop-daemon.sh
+-index d2ef1cf..12cbb9e 100755
+---- a/hadoop-common-project/hadoop-common/src/main/bin/hadoop-daemon.sh
+-+++ b/hadoop-common-project/hadoop-common/src/main/bin/hadoop-daemon.sh
+-@@ -102,7 +102,7 @@ fi
+- 
+- # get log directory
+- if [ "$HADOOP_LOG_DIR" = "" ]; then
+--  export HADOOP_LOG_DIR="$HADOOP_PREFIX/logs"
+-+  export HADOOP_LOG_DIR="/var/log/hadoop"
+- fi
+- 
+- if [ ! -w "$HADOOP_LOG_DIR" ] ; then
+-diff --git a/hadoop-common-project/hadoop-kms/src/main/libexec/kms-config.sh b/hadoop-common-project/hadoop-kms/src/main/libexec/kms-config.sh
+-index 7c07b9a..1a2a6ac 100644
+---- a/hadoop-common-project/hadoop-kms/src/main/libexec/kms-config.sh
+-+++ b/hadoop-common-project/hadoop-kms/src/main/libexec/kms-config.sh
+-@@ -101,7 +101,7 @@ if [ "${KMS_CONFIG}" != "${kms_config}" ]; then
+- fi
+- 
+- if [ "${KMS_LOG}" = "" ]; then
+--  export KMS_LOG=${KMS_HOME}/logs
+-+  export KMS_LOG=/var/log/hadoop
+-   print "Setting KMS_LOG:           ${KMS_LOG}"
+- else
+-   print "Using   KMS_LOG:           ${KMS_LOG}"
+-diff --git a/hadoop-hdfs-project/hadoop-hdfs-httpfs/src/main/libexec/httpfs-config.sh b/hadoop-hdfs-project/hadoop-hdfs-httpfs/src/main/libexec/httpfs-config.sh
+-index a2fe1c2..fb33ef1 100644
+---- a/hadoop-hdfs-project/hadoop-hdfs-httpfs/src/main/libexec/httpfs-config.sh
+-+++ b/hadoop-hdfs-project/hadoop-hdfs-httpfs/src/main/libexec/httpfs-config.sh
+-@@ -101,7 +101,7 @@ if [ "${HTTPFS_CONFIG}" != "${httpfs_config}" ]; then
+- fi
+- 
+- if [ "${HTTPFS_LOG}" = "" ]; then
+--  export HTTPFS_LOG=${HTTPFS_HOME}/logs
+-+  export HTTPFS_LOG=/var/log/hadoop
+-   print "Setting HTTPFS_LOG:           ${HTTPFS_LOG}"
+- else
+-   print "Using   HTTPFS_LOG:           ${HTTPFS_LOG}"
+-diff --git a/hadoop-mapreduce-project/bin/mapred-config.sh b/hadoop-mapreduce-project/bin/mapred-config.sh
+-index b245ec9..6be06a3 100644
+---- a/hadoop-mapreduce-project/bin/mapred-config.sh
+-+++ b/hadoop-mapreduce-project/bin/mapred-config.sh
+-@@ -41,7 +41,7 @@ fi
+- 
+- # Only set locally to use in HADOOP_OPTS. No need to export.
+- # The following defaults are useful when somebody directly invokes bin/mapred.
+--HADOOP_MAPRED_LOG_DIR=${HADOOP_MAPRED_LOG_DIR:-${HADOOP_MAPRED_HOME}/logs}
+-+HADOOP_MAPRED_LOG_DIR=${HADOOP_MAPRED_LOG_DIR:-/var/log/hadoop}
+- HADOOP_MAPRED_LOGFILE=${HADOOP_MAPRED_LOGFILE:-hadoop.log}
+- HADOOP_MAPRED_ROOT_LOGGER=${HADOOP_MAPRED_ROOT_LOGGER:-${HADOOP_LOGLEVEL},console}
+- 
+-diff --git a/hadoop-yarn-project/hadoop-yarn/bin/yarn b/hadoop-yarn-project/hadoop-yarn/bin/yarn
+-index 552cef4..fd660b0 100644
+---- a/hadoop-yarn-project/hadoop-yarn/bin/yarn
+-+++ b/hadoop-yarn-project/hadoop-yarn/bin/yarn
+-@@ -197,7 +197,7 @@ IFS=
+- 
+- # default log directory & file
+- if [ "$YARN_LOG_DIR" = "" ]; then
+--  YARN_LOG_DIR="$HADOOP_YARN_HOME/logs"
+-+  YARN_LOG_DIR="/var/log/hadoop"
+- fi
+- if [ "$YARN_LOGFILE" = "" ]; then
+-   YARN_LOGFILE='yarn.log'
+-diff --git a/hadoop-yarn-project/hadoop-yarn/bin/yarn-config.sh b/hadoop-yarn-project/hadoop-yarn/bin/yarn-config.sh
+-index 3d67801..7fe6161 100644
+---- a/hadoop-yarn-project/hadoop-yarn/bin/yarn-config.sh
+-+++ b/hadoop-yarn-project/hadoop-yarn/bin/yarn-config.sh
+-@@ -49,7 +49,12 @@ then
+- fi
+-  
+- # Allow alternate conf dir location.
+--export YARN_CONF_DIR="${HADOOP_CONF_DIR:-$HADOOP_YARN_HOME/conf}"
+-+if [ -e "/etc/hadoop" ]
+-+then
+-+    export YARN_CONF_DIR="${HADOOP_CONF_DIR:-/etc/hadoop}"
+-+else
+-+    export YARN_CONF_DIR="${HADOOP_CONF_DIR:-/usr/share/defaults/hadoop}"
+-+fi
+- 
+- #check to see it is specified whether to use the slaves or the
+- # masters file
+-diff --git a/hadoop-yarn-project/hadoop-yarn/bin/yarn-daemon.sh b/hadoop-yarn-project/hadoop-yarn/bin/yarn-daemon.sh
+-index fbfa71d..c905c2b 100644
+---- a/hadoop-yarn-project/hadoop-yarn/bin/yarn-daemon.sh
+-+++ b/hadoop-yarn-project/hadoop-yarn/bin/yarn-daemon.sh
+-@@ -76,7 +76,7 @@ fi
+- 
+- # get log directory
+- if [ "$YARN_LOG_DIR" = "" ]; then
+--  export YARN_LOG_DIR="$HADOOP_YARN_HOME/logs"
+-+  export YARN_LOG_DIR="/var/log/hadoop"
+- fi
+- 
+- if [ ! -w "$YARN_LOG_DIR" ] ; then
+-diff --git a/hadoop-yarn-project/hadoop-yarn/conf/yarn-env.sh b/hadoop-yarn-project/hadoop-yarn/conf/yarn-env.sh
+-index 2fc693b..a4e7507 100644
+---- a/hadoop-yarn-project/hadoop-yarn/conf/yarn-env.sh
+-+++ b/hadoop-yarn-project/hadoop-yarn/conf/yarn-env.sh
+-@@ -90,7 +90,7 @@ IFS=
+- 
+- # default log directory & file
+- if [ "$YARN_LOG_DIR" = "" ]; then
+--  YARN_LOG_DIR="$HADOOP_YARN_HOME/logs"
+-+  YARN_LOG_DIR="/var/log/hadoop"
+- fi
+- if [ "$YARN_LOGFILE" = "" ]; then
+-   YARN_LOGFILE='yarn.log'
++diff --git a/hadoop-common-project/hadoop-common/src/main/bin/hadoop-functions.sh b/hadoop-common-project/hadoop-common/src/main/bin/hadoop-functions.sh
++index c027971..01d5130 100755
++--- a/hadoop-common-project/hadoop-common/src/main/bin/hadoop-functions.sh
+++++ b/hadoop-common-project/hadoop-common/src/main/bin/hadoop-functions.sh
++@@ -633,11 +633,16 @@ function hadoop_find_confdir
++   # An attempt at compatibility with some Hadoop 1.x
++   # installs.
++   if [[ -e "${HADOOP_HOME}/conf/hadoop-env.sh" ]]; then
++-    conf_dir="conf"
+++    conf_dir="${HADOOP_HOME}/conf"
+++  elif [ -e "/etc/hadoop" ]; then
+++    DEFAULT_CONF_DIR="/etc/hadoop"
+++    if [ -z "$(ls -A /etc/hadoop)" ]; then
+++      hadoop_error "ERROR: Error: Directory /etc/hadoop is empty"
+++    fi
++   else
++-    conf_dir="etc/hadoop"
+++    conf_dir="/usr/share/defaults/hadoop"
++   fi
++-  export HADOOP_CONF_DIR="${HADOOP_CONF_DIR:-${HADOOP_HOME}/${conf_dir}}"
+++  export HADOOP_CONF_DIR="${HADOOP_CONF_DIR:-${conf_dir}}"
++ 
++   hadoop_debug "HADOOP_CONF_DIR=${HADOOP_CONF_DIR}"
++ }
++@@ -894,7 +899,7 @@ function hadoop_basic_init
++   # let's get the effective username and use that
++   USER=${USER:-$(id -nu)}
++   HADOOP_IDENT_STRING=${HADOOP_IDENT_STRING:-$USER}
++-  HADOOP_LOG_DIR=${HADOOP_LOG_DIR:-"${HADOOP_HOME}/logs"}
+++  HADOOP_LOG_DIR=${HADOOP_LOG_DIR:-"/var/log/hadoop"}
++   HADOOP_LOGFILE=${HADOOP_LOGFILE:-hadoop.log}
++   HADOOP_LOGLEVEL=${HADOOP_LOGLEVEL:-INFO}
++   HADOOP_NICENESS=${HADOOP_NICENESS:-0}
+ -- 
+-2.14.2
++2.20.1
+ 
+diff --git a/0001-YARN-8498.-Yarn-NodeManager-OOM-Listener-Fails-Compi.patch b/0001-YARN-8498.-Yarn-NodeManager-OOM-Listener-Fails-Compi.patch
+new file mode 100644
+index 0000000..386b11f
+--- /dev/null
++++ b/0001-YARN-8498.-Yarn-NodeManager-OOM-Listener-Fails-Compi.patch
+@@ -0,0 +1,88 @@
++From 0bdcc58a6087b9e77821088a8c53b67809a7cb64 Mon Sep 17 00:00:00 2001
++From: Vinayakumar B <vinayakumarb@apache.org>
++Date: Thu, 7 Feb 2019 13:02:35 +0530
++Subject: [PATCH] YARN-8498. Yarn NodeManager OOM Listener Fails Compilation on
++ Ubuntu 18.04. Contributed by Ayush Saxena.
++
++(cherry picked from commit 3c96a03deadc419524b5fe2b8c85acc894286935)
++---
++ .../native/oom-listener/impl/oom_listener_main.c   |  4 +++-
++ .../oom-listener/test/oom_listener_test_main.cc    | 14 +++++++-------
++ 2 files changed, 10 insertions(+), 8 deletions(-)
++
++diff --git a/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-nodemanager/src/main/native/oom-listener/impl/oom_listener_main.c b/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-nodemanager/src/main/native/oom-listener/impl/oom_listener_main.c
++index eb7fc3e473c..2f4bac896fb 100644
++--- a/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-nodemanager/src/main/native/oom-listener/impl/oom_listener_main.c
+++++ b/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-nodemanager/src/main/native/oom-listener/impl/oom_listener_main.c
++@@ -25,6 +25,8 @@
++ 
++ #include "oom_listener.h"
++ 
+++extern inline void cleanup(_oom_listener_descriptors *descriptors);
+++
++ void print_usage(void) {
++   fprintf(stderr, "oom-listener");
++   fprintf(stderr, "Listen to OOM events in a cgroup");
++@@ -101,4 +103,4 @@ int main() {
++   return 1;
++ }
++ 
++-#endif
++\ No newline at end of file
+++#endif
++diff --git a/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-nodemanager/src/main/native/oom-listener/test/oom_listener_test_main.cc b/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-nodemanager/src/main/native/oom-listener/test/oom_listener_test_main.cc
++index 421c21e0677..b79d5018061 100644
++--- a/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-nodemanager/src/main/native/oom-listener/test/oom_listener_test_main.cc
+++++ b/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-nodemanager/src/main/native/oom-listener/test/oom_listener_test_main.cc
++@@ -159,7 +159,7 @@ TEST_F(OOMListenerTest, test_oom) {
++   const int simulate_cgroups =
++       mock_oom_event_as_user != -1;
++ 
++-  __pid_t mem_hog_pid = fork();
+++  pid_t mem_hog_pid = fork();
++   if (!mem_hog_pid) {
++     // Child process to consume too much memory
++     if (simulate_cgroups) {
++@@ -171,7 +171,7 @@ TEST_F(OOMListenerTest, test_oom) {
++       // Wait until we are added to the cgroup
++       // so that it is accounted for our mem
++       // usage
++-      __pid_t cgroupPid;
+++      pid_t cgroupPid;
++       do {
++         std::ifstream tasks;
++         tasks.open(tasks_file.c_str(), tasks.in);
++@@ -210,7 +210,7 @@ TEST_F(OOMListenerTest, test_oom) {
++     // There is no race condition with the process
++     // running out of memory. If oom is 1 at startup
++     // oom_listener will send an initial notification
++-    __pid_t listener = fork();
+++    pid_t listener = fork();
++     if (listener == 0) {
++       // child listener forwarding cgroup events
++       _oom_listener_descriptors descriptors = {
++@@ -253,8 +253,8 @@ TEST_F(OOMListenerTest, test_oom) {
++       ASSERT_EQ(0, kill(mem_hog_pid, SIGKILL));
++ 
++       // Verify that process was killed
++-      __WAIT_STATUS mem_hog_status = {};
++-      __pid_t exited0 = wait(mem_hog_status);
+++      int* mem_hog_status = {};
+++      pid_t exited0 = wait(mem_hog_status);
++       ASSERT_EQ(mem_hog_pid, exited0)
++         << "Wrong process exited";
++       ASSERT_EQ(NULL, mem_hog_status)
++@@ -272,8 +272,8 @@ TEST_F(OOMListenerTest, test_oom) {
++                 << "Could not delete cgroup " << GetCGroup();
++ 
++       // Check that oom_listener exited on the deletion of the cgroup
++-      __WAIT_STATUS oom_listener_status = {};
++-      __pid_t exited1 = wait(oom_listener_status);
+++      int* oom_listener_status = {};
+++      pid_t exited1 = wait(oom_listener_status);
++       ASSERT_EQ(listener, exited1)
++         << "Wrong process exited";
++       ASSERT_EQ(NULL, oom_listener_status)
++-- 
++2.21.0
++
+diff --git a/Makefile b/Makefile
+index 60818a3..a354785 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,6 +1,5 @@
+ PKG_NAME := apache-hadoop
+-URL := http://apache.cs.utah.edu/hadoop/common/hadoop-2.8.5/hadoop-2.8.5-src.tar.gz
+-ARCHIVES := http://archive.apache.org/dist/tomcat/tomcat-6/v6.0.48/bin/apache-tomcat-6.0.48.tar.gz . \
+-       https://repo.maven.apache.org/maven2/io/netty/netty-all/4.0.23.Final/netty-all-4.0.23.Final.jar
++URL = http://apache.cs.utah.edu/hadoop/common/hadoop-3.2.0/hadoop-3.2.0-src.tar.gz
++ARCHIVES = http://archive.apache.org/dist/tomcat/tomcat-6/v6.0.48/bin/apache-tomcat-6.0.48.tar.gz . https://repo.maven.apache.org/maven2/io/netty/netty-all/4.0.23.Final/netty-all-4.0.23.Final.jar
+ 
+ include ../common/Makefile.common
+diff --git a/apache-hadoop.spec b/apache-hadoop.spec
+index 3900328..e27762e 100644
+--- a/apache-hadoop.spec
++++ b/apache-hadoop.spec
+@@ -1,37 +1,43 @@
+ Name     : apache-hadoop
+-Version  : 2.8.5
+-Release  : 27
+-URL      : http://apache.cs.utah.edu/hadoop/common/hadoop-2.8.5/hadoop-2.8.5-src.tar.gz
+-Source0  : http://apache.cs.utah.edu/hadoop/common/hadoop-2.8.5/hadoop-2.8.5-src.tar.gz
++Version  : 3.2.0
++Release  : 28
++URL      : http://apache.cs.utah.edu/hadoop/common/hadoop-3.2.0/hadoop-3.2.0-src.tar.gz
++Source0  : http://apache.cs.utah.edu/hadoop/common/hadoop-3.2.0/hadoop-3.2.0-src.tar.gz
+ Source1  : http://archive.apache.org/dist/tomcat/tomcat-6/v6.0.48/bin/apache-tomcat-6.0.48.tar.gz
+-Source3  : https://repo.maven.apache.org/maven2/io/netty/netty-all/4.0.23.Final/netty-all-4.0.23.Final.jar
++Source2  : https://repo.maven.apache.org/maven2/io/netty/netty-all/4.0.23.Final/netty-all-4.0.23.Final.jar
+ Summary  : No detailed summary available
+ Group    : Development/Tools
+ License  : Apache-2.0 BSD-3-Clause
+ BuildRequires : hadoop-dep
+-BuildRequires : openjdk
+-BuildRequires : openjdk-dev
++BuildRequires : openjdk11
++BuildRequires : openjdk11-dev
+ BuildRequires : protobuf
+ Buildrequires : apache-maven
+ BuildRequires : cmake
+ BuildRequires : zlib-dev
+ BuildRequires : openssl-dev
+-Patch0   : 0001-Change-protobuf-version.patch
+-Patch1   : protobuf3.patch
+-Patch2   : 0001-Java_home-on-CLR.patch
+-Patch3   : HADOOP-11364.01.patch
+-Patch4   : 0001-Stateless-v2.patch
++Patch0   : 0001-Integrate-JDK11.patch
++Patch1   : 0001-Java_home-on-CLR.patch
++Patch2   : HADOOP-11364.01.patch
++Patch3   : 0001-Stateless-v2.patch
++Patch4   : 0001-Change-protobuf-version.patch
++Patch5   : protobuf3.patch
++Patch6   : protobuf-3.6.1-hadoop-3.2.0-On-CLR.patch
++Patch7   : 0001-YARN-8498.-Yarn-NodeManager-OOM-Listener-Fails-Compi.patch
+ 
+ %description
+ 
+ %prep
+-%setup -q -n hadoop-2.8.5-src
+-%patch0 -p1 
++%setup -q -n hadoop-3.2.0-src
++%patch0 -p1
+ %patch1 -p1
+-%patch2 -p1
+ # https://issues.apache.org/jira/browse/YARN-4714
++%patch2 -p1
+ %patch3 -p1
+ %patch4 -p1
++%patch5 -p1
++%patch6 -p1
++%patch7 -p1
+ 
+ %build
+ mkdir -p %{buildroot}
+@@ -45,7 +51,9 @@ cp %{SOURCE1} hadoop-hdfs-project/hadoop-hdfs-httpfs/downloads
+ 
+ # Build Hadoop
+ # TODO compile Hadoop with -Pdocs, but fails
+-mvn package -o -Pnative -Pdist -DskipTests -Dtar -Dmaven.repo.local=%{buildroot}/.m2/repository
++# TODO compile Hadoop with -Pnative, but fails
++export JAVA_HOME=/usr/lib/jvm/java-1.11.0-openjdk
++mvn package -o -Pnative -Pdist -DskipTests -Dtar -Danimal.sniffer.skip=true -Dmaven.javadoc.skip=true -Djavac.version=11 -Dguava.version=19.0 -Dmaven.plugin-tools.version=3.6.0 -Dmaven.repo.local=%{buildroot}/.m2/repository
+ 
+ %install
+ rm -rf %{buildroot}
+@@ -60,912 +68,640 @@ find %{buildroot}/usr -iname *.cmd -delete
+ find %{buildroot}/usr -iname *.orig -delete
+ 
+ # Fix java.lang.NoClassDefFoundError: io/netty/channel/EventLoopGroup
+-cp %{SOURCE3} %{buildroot}/usr/share/hadoop/common/lib/
+-
+-mv %{buildroot}/usr/bin/rcc %{buildroot}/usr/bin/hadoop-rcc
++cp %{SOURCE2} %{buildroot}/usr/share/hadoop/common/lib/
+ 
+ %files
+ %defattr(-,root,root,-)
+-/usr/bin/container-executor
+-/usr/bin/hadoop
+-/usr/bin/hadoop-rcc
+-/usr/bin/hdfs
+-/usr/bin/mapred
+-/usr/bin/test-container-executor
+-/usr/bin/yarn
+-/usr/include/hdfs.h
+ /usr/include/Pipes.hh
+-/usr/include/SerialUtils.hh
++/usr/include/hdfs.h
+ /usr/include/StringUtils.hh
++/usr/include/SerialUtils.hh
+ /usr/include/TemplateFactory.hh
+-/usr/libexec/hadoop-config.sh
+-/usr/libexec/hdfs-config.sh
+-/usr/libexec/httpfs-config.sh
+-/usr/libexec/kms-config.sh
+-/usr/libexec/mapred-config.sh
+-/usr/libexec/yarn-config.sh
+-/usr/lib/native/examples/pipes-sort
+-/usr/lib/native/examples/wordcount-nopipe
+-/usr/lib/native/examples/wordcount-part
+-/usr/lib/native/examples/wordcount-simple
+-/usr/lib/native/libhadoop.a
+-/usr/lib/native/libhadooppipes.a
+-/usr/lib/native/libhadoop.so
+-/usr/lib/native/libhadoop.so.1.0.0
+-/usr/lib/native/libhadooputils.a
+-/usr/lib/native/libhdfs.a
+-/usr/lib/native/libhdfs.so
+-/usr/lib/native/libhdfs.so.0.0.0
+-/usr/sbin/distribute-exclude.sh
+-/usr/sbin/hadoop-daemon.sh
+-/usr/sbin/hadoop-daemons.sh
+-/usr/sbin/hdfs-config.sh
+-/usr/sbin/httpfs.sh
+-/usr/sbin/kms.sh
+-/usr/sbin/mr-jobhistory-daemon.sh
+-/usr/sbin/refresh-namenodes.sh
+-/usr/sbin/slaves.sh
+-/usr/sbin/start-all.sh
+-/usr/sbin/start-balancer.sh
+-/usr/sbin/start-dfs.sh
+-/usr/sbin/start-secure-dns.sh
+-/usr/sbin/start-yarn.sh
+-/usr/sbin/stop-all.sh
+-/usr/sbin/stop-balancer.sh
+-/usr/sbin/stop-dfs.sh
+-/usr/sbin/stop-secure-dns.sh
+-/usr/sbin/stop-yarn.sh
+-/usr/sbin/yarn-daemon.sh
+-/usr/sbin/yarn-daemons.sh
+-/usr/share/defaults/hadoop/capacity-scheduler.xml
+-/usr/share/defaults/hadoop/configuration.xsl
+-/usr/share/defaults/hadoop/container-executor.cfg
+-/usr/share/defaults/hadoop/core-site.xml
+-/usr/share/defaults/hadoop/hadoop-env.sh
+-/usr/share/defaults/hadoop/hadoop-metrics2.properties
+-/usr/share/defaults/hadoop/hadoop-metrics.properties
+-/usr/share/defaults/hadoop/hadoop-policy.xml
+-/usr/share/defaults/hadoop/hdfs-site.xml
+-/usr/share/defaults/hadoop/httpfs-env.sh
+-/usr/share/defaults/hadoop/httpfs-log4j.properties
+-/usr/share/defaults/hadoop/httpfs-signature.secret
+-/usr/share/defaults/hadoop/httpfs-site.xml
+-/usr/share/defaults/hadoop/kms-acls.xml
+-/usr/share/defaults/hadoop/kms-env.sh
+-/usr/share/defaults/hadoop/kms-log4j.properties
+-/usr/share/defaults/hadoop/kms-site.xml
+-/usr/share/defaults/hadoop/log4j.properties
+-/usr/share/defaults/hadoop/mapred-env.sh
+-/usr/share/defaults/hadoop/mapred-queues.xml.template
+-/usr/share/defaults/hadoop/mapred-site.xml.template
+-/usr/share/defaults/hadoop/slaves
+-/usr/share/defaults/hadoop/ssl-client.xml.example
+-/usr/share/defaults/hadoop/ssl-server.xml.example
+-/usr/share/defaults/hadoop/yarn-env.sh
+-/usr/share/defaults/hadoop/yarn-site.xml
++/usr/share/doc/hadoop/README.txt
+ /usr/share/doc/hadoop/LICENSE.txt
+ /usr/share/doc/hadoop/NOTICE.txt
+-/usr/share/doc/hadoop/README.txt
+-/usr/share/hadoop/common/hadoop-common-2.8.5.jar
+-/usr/share/hadoop/common/hadoop-common-2.8.5-tests.jar
+-/usr/share/hadoop/common/hadoop-nfs-2.8.5.jar
++/usr/share/hadoop/client/hadoop-client-minicluster-3.2.0.jar
++/usr/share/hadoop/client/hadoop-client-api-3.2.0.jar
++/usr/share/hadoop/client/hadoop-client-runtime-3.2.0.jar
++/usr/share/hadoop/tools/resourceestimator/conf/resourceestimator-config.xml
++/usr/share/hadoop/tools/resourceestimator/bin/start-estimator.sh
++/usr/share/hadoop/tools/resourceestimator/bin/estimator.sh
++/usr/share/hadoop/tools/resourceestimator/bin/stop-estimator.sh
++/usr/share/hadoop/tools/resourceestimator/data/resourceEstimatorService.txt
++/usr/share/hadoop/tools/sources/hadoop-streaming-3.2.0-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-rumen-3.2.0-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-streaming-3.2.0-test-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-datajoin-3.2.0-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-rumen-3.2.0-test-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-distcp-3.2.0-test-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-resourceestimator-3.2.0-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-gridmix-3.2.0-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-distcp-3.2.0-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-sls-3.2.0-test-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-archives-3.2.0-test-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-gridmix-3.2.0-test-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-datajoin-3.2.0-test-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-sls-3.2.0-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-extras-3.2.0-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-resourceestimator-3.2.0-test-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-archive-logs-3.2.0-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-archive-logs-3.2.0-test-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-extras-3.2.0-test-sources.jar
++/usr/share/hadoop/tools/sources/hadoop-archives-3.2.0-sources.jar
++/usr/share/hadoop/tools/lib/hadoop-sls-3.2.0.jar
++/usr/share/hadoop/tools/lib/hadoop-aliyun-3.2.0.jar
++/usr/share/hadoop/tools/lib/hadoop-extras-3.2.0.jar
++/usr/share/hadoop/tools/lib/hadoop-aws-3.2.0.jar
++/usr/share/hadoop/tools/lib/lz4-1.2.0.jar
++/usr/share/hadoop/tools/lib/hadoop-kafka-3.2.0.jar
++/usr/share/hadoop/tools/lib/hadoop-rumen-3.2.0.jar
++/usr/share/hadoop/tools/lib/ojalgo-43.0.jar
++/usr/share/hadoop/tools/lib/hadoop-archive-logs-3.2.0.jar
++/usr/share/hadoop/tools/lib/aliyun-sdk-oss-2.8.3.jar
++/usr/share/hadoop/tools/lib/kafka-clients-0.8.2.1.jar
++/usr/share/hadoop/tools/lib/hadoop-azure-datalake-3.2.0.jar
++/usr/share/hadoop/tools/lib/hadoop-resourceestimator-3.2.0.jar
++/usr/share/hadoop/tools/lib/wildfly-openssl-1.0.4.Final.jar
++/usr/share/hadoop/tools/lib/hadoop-gridmix-3.2.0.jar
++/usr/share/hadoop/tools/lib/aws-java-sdk-bundle-1.11.375.jar
++/usr/share/hadoop/tools/lib/hadoop-streaming-3.2.0.jar
++/usr/share/hadoop/tools/lib/hadoop-archives-3.2.0.jar
++/usr/share/hadoop/tools/lib/azure-keyvault-core-1.0.0.jar
++/usr/share/hadoop/tools/lib/hadoop-openstack-3.2.0.jar
++/usr/share/hadoop/tools/lib/hadoop-distcp-3.2.0.jar
++/usr/share/hadoop/tools/lib/azure-storage-7.0.0.jar
++/usr/share/hadoop/tools/lib/hadoop-datajoin-3.2.0.jar
++/usr/share/hadoop/tools/lib/hadoop-fs2img-3.2.0.jar
++/usr/share/hadoop/tools/lib/hadoop-azure-3.2.0.jar
++/usr/share/hadoop/tools/lib/jdom-1.1.jar
++/usr/share/hadoop/tools/lib/azure-data-lake-store-sdk-2.2.9.jar
++/usr/share/hadoop/tools/sls/html/css/bootstrap-responsive.min.css
++/usr/share/hadoop/tools/sls/html/css/bootstrap.min.css
++/usr/share/hadoop/tools/sls/html/simulate.html.template
++/usr/share/hadoop/tools/sls/html/track.html.template
++/usr/share/hadoop/tools/sls/html/showSimulationTrace.html
++/usr/share/hadoop/tools/sls/html/simulate.info.html.template
++/usr/share/hadoop/tools/sls/html/js/thirdparty/d3.v3.js
++/usr/share/hadoop/tools/sls/html/js/thirdparty/bootstrap.min.js
++/usr/share/hadoop/tools/sls/html/js/thirdparty/d3-LICENSE
++/usr/share/hadoop/tools/sls/html/js/thirdparty/jquery.js
++/usr/share/hadoop/tools/sls/bin/slsrun.sh
++/usr/share/hadoop/tools/sls/bin/rumen2sls.sh
++/usr/share/hadoop/tools/sls/sample-conf/fair-scheduler.xml
++/usr/share/hadoop/tools/sls/sample-conf/log4j.properties
++/usr/share/hadoop/tools/sls/sample-conf/sls-runner.xml
++/usr/share/hadoop/tools/sls/sample-conf/yarn-site.xml
++/usr/share/hadoop/tools/sls/sample-conf/capacity-scheduler.xml
++/usr/share/hadoop/tools/sls/sample-data/2jobs2min-rumen-jh.json
++/usr/share/hadoop/yarn/hadoop-yarn-server-timeline-pluginstorage-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-api-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-applications-unmanaged-am-launcher-3.2.0.jar
++/usr/share/hadoop/yarn/timelineservice/hadoop-yarn-server-timelineservice-hbase-common-3.2.0.jar
++/usr/share/hadoop/yarn/timelineservice/hadoop-yarn-server-timelineservice-3.2.0.jar
++/usr/share/hadoop/yarn/timelineservice/test/hadoop-yarn-server-timelineservice-hbase-tests-3.2.0.jar
++/usr/share/hadoop/yarn/timelineservice/hadoop-yarn-server-timelineservice-hbase-client-3.2.0.jar
++/usr/share/hadoop/yarn/timelineservice/hadoop-yarn-server-timelineservice-hbase-coprocessor-3.2.0.jar
++/usr/share/hadoop/yarn/timelineservice/lib/commons-csv-1.0.jar
++/usr/share/hadoop/yarn/timelineservice/lib/jcodings-1.0.13.jar
++/usr/share/hadoop/yarn/timelineservice/lib/metrics-core-2.2.0.jar
++/usr/share/hadoop/yarn/timelineservice/lib/hbase-common-1.2.6.jar
++/usr/share/hadoop/yarn/timelineservice/lib/hbase-protocol-1.2.6.jar
++/usr/share/hadoop/yarn/timelineservice/lib/htrace-core-3.1.0-incubating.jar
++/usr/share/hadoop/yarn/timelineservice/lib/hbase-annotations-1.2.6.jar
++/usr/share/hadoop/yarn/timelineservice/lib/commons-lang-2.6.jar
++/usr/share/hadoop/yarn/timelineservice/lib/joni-2.1.2.jar
++/usr/share/hadoop/yarn/timelineservice/lib/hbase-client-1.2.6.jar
++/usr/share/hadoop/yarn/hadoop-yarn-server-web-proxy-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-submarine-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-services-core-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-server-nodemanager-3.2.0.jar
++/usr/share/hadoop/yarn/test/hadoop-yarn-server-tests-3.2.0-tests.jar
++/usr/share/hadoop/yarn/hadoop-yarn-registry-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-server-common-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-server-applicationhistoryservice-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-server-tests-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-server-router-3.2.0.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-server-nodemanager-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-common-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-server-resourcemanager-3.2.0-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-server-nodemanager-3.2.0-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-server-common-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-services-api-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-server-tests-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-applications-unmanaged-am-launcher-3.2.0-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-server-applicationhistoryservice-3.2.0-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-services-core-3.2.0-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-client-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-server-web-proxy-3.2.0-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-server-applicationhistoryservice-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-server-web-proxy-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-api-3.2.0-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-applications-distributedshell-3.2.0-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-services-api-3.2.0-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-applications-distributedshell-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-server-resourcemanager-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-common-3.2.0-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-client-3.2.0-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-services-core-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-server-tests-3.2.0-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-applications-unmanaged-am-launcher-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-api-3.2.0-test-sources.jar
++/usr/share/hadoop/yarn/sources/hadoop-yarn-server-common-3.2.0-sources.jar
++/usr/share/hadoop/yarn/hadoop-yarn-client-3.2.0.jar
++/usr/share/hadoop/yarn/lib/mssql-jdbc-6.2.1.jre7.jar
++/usr/share/hadoop/yarn/lib/guice-4.0.jar
++/usr/share/hadoop/yarn/lib/swagger-annotations-1.5.4.jar
++/usr/share/hadoop/yarn/lib/json-io-2.5.1.jar
++/usr/share/hadoop/yarn/lib/jersey-guice-1.19.jar
++/usr/share/hadoop/yarn/lib/aopalliance-1.0.jar
++/usr/share/hadoop/yarn/lib/jackson-jaxrs-base-2.9.5.jar
++/usr/share/hadoop/yarn/lib/javax.inject-1.jar
++/usr/share/hadoop/yarn/lib/ehcache-3.3.1.jar
++/usr/share/hadoop/yarn/lib/fst-2.50.jar
++/usr/share/hadoop/yarn/lib/guice-servlet-4.0.jar
++/usr/share/hadoop/yarn/lib/jackson-jaxrs-json-provider-2.9.5.jar
++/usr/share/hadoop/yarn/lib/objenesis-1.0.jar
++/usr/share/hadoop/yarn/lib/jersey-client-1.19.jar
++/usr/share/hadoop/yarn/lib/java-util-1.9.0.jar
++/usr/share/hadoop/yarn/lib/HikariCP-java7-2.4.12.jar
++/usr/share/hadoop/yarn/lib/snakeyaml-1.16.jar
++/usr/share/hadoop/yarn/lib/jackson-module-jaxb-annotations-2.9.5.jar
++/usr/share/hadoop/yarn/lib/metrics-core-3.2.4.jar
++/usr/share/hadoop/yarn/lib/geronimo-jcache_1.0_spec-1.0-alpha-1.jar
++/usr/share/hadoop/yarn/hadoop-yarn-common-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-server-resourcemanager-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-applications-distributedshell-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-server-sharedcachemanager-3.2.0.jar
++/usr/share/hadoop/yarn/hadoop-yarn-services-api-3.2.0.jar
++/usr/share/hadoop/yarn/yarn-service-examples/httpd/httpd-proxy.conf
++/usr/share/hadoop/yarn/yarn-service-examples/httpd/httpd.json
++/usr/share/hadoop/yarn/yarn-service-examples/sleeper/sleeper.json
++/usr/share/hadoop/yarn/yarn-service-examples/httpd-no-dns/httpd-no-dns.json
++/usr/share/hadoop/yarn/yarn-service-examples/httpd-no-dns/httpd-proxy-no-dns.conf
++/usr/share/hadoop/common/hadoop-common-3.2.0-tests.jar
++/usr/share/hadoop/common/hadoop-kms-3.2.0.jar
++/usr/share/hadoop/common/webapps/static/hadoop.css.gz
++/usr/share/hadoop/common/hadoop-common-3.2.0.jar
++/usr/share/hadoop/common/hadoop-nfs-3.2.0.jar
++/usr/share/hadoop/common/sources/hadoop-common-3.2.0-sources.jar
++/usr/share/hadoop/common/sources/hadoop-common-3.2.0-test-sources.jar
++/usr/share/hadoop/common/lib/jcip-annotations-1.0-1.jar
++/usr/share/hadoop/common/lib/jetty-servlet-9.3.24.v20180605.jar
++/usr/share/hadoop/common/lib/token-provider-1.0.1.jar
++/usr/share/hadoop/common/lib/jetty-webapp-9.3.24.v20180605.jar
++/usr/share/hadoop/common/lib/hadoop-auth-3.2.0.jar
++/usr/share/hadoop/common/lib/dnsjava-2.1.7.jar
++/usr/share/hadoop/common/lib/stax2-api-3.1.4.jar
++/usr/share/hadoop/common/lib/asm-5.0.4.jar
++/usr/share/hadoop/common/lib/kerby-pkix-1.0.1.jar
++/usr/share/hadoop/common/lib/netty-all-4.0.23.Final.jar
++/usr/share/hadoop/common/lib/curator-framework-2.12.0.jar
++/usr/share/hadoop/common/lib/xz-1.0.jar
++/usr/share/hadoop/common/lib/jetty-http-9.3.24.v20180605.jar
++/usr/share/hadoop/common/lib/jackson-databind-2.9.5.jar
++/usr/share/hadoop/common/lib/commons-net-3.6.jar
++/usr/share/hadoop/common/lib/slf4j-log4j12-1.7.25.jar
++/usr/share/hadoop/common/lib/jul-to-slf4j-1.7.25.jar
++/usr/share/hadoop/common/lib/kerby-asn1-1.0.1.jar
++/usr/share/hadoop/common/lib/gson-2.2.4.jar
++/usr/share/hadoop/common/lib/commons-logging-1.1.3.jar
++/usr/share/hadoop/common/lib/jersey-server-1.19.jar
++/usr/share/hadoop/common/lib/jackson-annotations-2.9.5.jar
++/usr/share/hadoop/common/lib/commons-lang3-3.7.jar
++/usr/share/hadoop/common/lib/netty-3.10.5.Final.jar
++/usr/share/hadoop/common/lib/jersey-servlet-1.19.jar
++/usr/share/hadoop/common/lib/jackson-core-asl-1.9.13.jar
++/usr/share/hadoop/common/lib/kerb-core-1.0.1.jar
++/usr/share/hadoop/common/lib/paranamer-2.3.jar
++/usr/share/hadoop/common/lib/jackson-core-2.9.5.jar
++/usr/share/hadoop/common/lib/jetty-security-9.3.24.v20180605.jar
++/usr/share/hadoop/common/lib/javax.servlet-api-3.1.0.jar
++/usr/share/hadoop/common/lib/hadoop-annotations-3.2.0.jar
++/usr/share/hadoop/common/lib/jetty-util-9.3.24.v20180605.jar
++/usr/share/hadoop/common/lib/jetty-xml-9.3.24.v20180605.jar
++/usr/share/hadoop/common/lib/jsch-0.1.54.jar
++/usr/share/hadoop/common/lib/commons-codec-1.11.jar
++/usr/share/hadoop/common/lib/kerb-admin-1.0.1.jar
++/usr/share/hadoop/common/lib/jettison-1.1.jar
++/usr/share/hadoop/common/lib/jsp-api-2.1.jar
++/usr/share/hadoop/common/lib/log4j-1.2.17.jar
++/usr/share/hadoop/common/lib/kerb-common-1.0.1.jar
++/usr/share/hadoop/common/lib/jetty-io-9.3.24.v20180605.jar
++/usr/share/hadoop/common/lib/curator-recipes-2.12.0.jar
++/usr/share/hadoop/common/lib/kerb-identity-1.0.1.jar
++/usr/share/hadoop/common/lib/httpcore-4.4.4.jar
++/usr/share/hadoop/common/lib/commons-cli-1.2.jar
++/usr/share/hadoop/common/lib/httpclient-4.5.2.jar
++/usr/share/hadoop/common/lib/commons-beanutils-1.9.3.jar
++/usr/share/hadoop/common/lib/kerby-xdr-1.0.1.jar
++/usr/share/hadoop/common/lib/jetty-server-9.3.24.v20180605.jar
++/usr/share/hadoop/common/lib/jaxb-api-2.2.11.jar
++/usr/share/hadoop/common/lib/jaxb-impl-2.2.3-1.jar
++/usr/share/hadoop/common/lib/javax.activation-api-1.2.0.jar
++/usr/share/hadoop/common/lib/kerb-crypto-1.0.1.jar
++/usr/share/hadoop/common/lib/commons-io-2.5.jar
++/usr/share/hadoop/common/lib/kerb-util-1.0.1.jar
++/usr/share/hadoop/common/lib/json-smart-2.3.jar
++/usr/share/hadoop/common/lib/guava-19.0.jar
++/usr/share/hadoop/common/lib/nimbus-jose-jwt-4.41.1.jar
++/usr/share/hadoop/common/lib/commons-math3-3.1.1.jar
++/usr/share/hadoop/common/lib/accessors-smart-1.2.jar
++/usr/share/hadoop/common/lib/commons-configuration2-2.1.1.jar
++/usr/share/hadoop/common/lib/jsr311-api-1.1.1.jar
++/usr/share/hadoop/common/lib/woodstox-core-5.0.3.jar
++/usr/share/hadoop/common/lib/zookeeper-3.4.13.jar
++/usr/share/hadoop/common/lib/kerb-server-1.0.1.jar
++/usr/share/hadoop/common/lib/kerb-client-1.0.1.jar
++/usr/share/hadoop/common/lib/jackson-jaxrs-1.9.13.jar
++/usr/share/hadoop/common/lib/audience-annotations-0.5.0.jar
++/usr/share/hadoop/common/lib/jackson-mapper-asl-1.9.13.jar
++/usr/share/hadoop/common/lib/protobuf-java-3.6.1.jar
++/usr/share/hadoop/common/lib/snappy-java-1.0.5.jar
++/usr/share/hadoop/common/lib/re2j-1.1.jar
++/usr/share/hadoop/common/lib/slf4j-api-1.7.25.jar
++/usr/share/hadoop/common/lib/commons-compress-1.4.1.jar
++/usr/share/hadoop/common/lib/kerby-util-1.0.1.jar
++/usr/share/hadoop/common/lib/kerb-simplekdc-1.0.1.jar
++/usr/share/hadoop/common/lib/metrics-core-3.2.4.jar
++/usr/share/hadoop/common/lib/jsr305-3.0.0.jar
++/usr/share/hadoop/common/lib/htrace-core4-4.1.0-incubating.jar
++/usr/share/hadoop/common/lib/jersey-core-1.19.jar
++/usr/share/hadoop/common/lib/jersey-json-1.19.jar
++/usr/share/hadoop/common/lib/jackson-xc-1.9.13.jar
++/usr/share/hadoop/common/lib/commons-text-1.4.jar
++/usr/share/hadoop/common/lib/avro-1.7.7.jar
++/usr/share/hadoop/common/lib/curator-client-2.12.0.jar
++/usr/share/hadoop/common/lib/commons-collections-3.2.2.jar
++/usr/share/hadoop/common/lib/kerby-config-1.0.1.jar
+ /usr/share/hadoop/common/jdiff/Apache_Hadoop_Common_2.6.0.xml
+-/usr/share/hadoop/common/jdiff/Apache_Hadoop_Common_2.7.2.xml
+ /usr/share/hadoop/common/jdiff/Apache_Hadoop_Common_2.8.0.xml
+-/usr/share/hadoop/common/jdiff/Apache_Hadoop_Common_2.8.2.xml
+-/usr/share/hadoop/common/jdiff/Apache_Hadoop_Common_2.8.3.xml
+ /usr/share/hadoop/common/jdiff/hadoop_0.17.0.xml
+-/usr/share/hadoop/common/jdiff/hadoop_0.18.1.xml
+-/usr/share/hadoop/common/jdiff/hadoop_0.18.2.xml
+-/usr/share/hadoop/common/jdiff/hadoop_0.18.3.xml
+-/usr/share/hadoop/common/jdiff/hadoop_0.19.0.xml
+ /usr/share/hadoop/common/jdiff/hadoop_0.19.1.xml
++/usr/share/hadoop/common/jdiff/hadoop_0.20.1.xml
++/usr/share/hadoop/common/jdiff/hadoop_0.19.0.xml
++/usr/share/hadoop/common/jdiff/Apache_Hadoop_Common_2.8.2.xml
+ /usr/share/hadoop/common/jdiff/hadoop_0.19.2.xml
+ /usr/share/hadoop/common/jdiff/hadoop_0.20.0.xml
+-/usr/share/hadoop/common/jdiff/hadoop_0.20.1.xml
++/usr/share/hadoop/common/jdiff/hadoop_0.18.2.xml
+ /usr/share/hadoop/common/jdiff/hadoop_0.20.2.xml
+-/usr/share/hadoop/common/jdiff/hadoop-core_0.20.0.xml
+ /usr/share/hadoop/common/jdiff/hadoop-core_0.21.0.xml
++/usr/share/hadoop/common/jdiff/hadoop_0.18.3.xml
++/usr/share/hadoop/common/jdiff/Apache_Hadoop_Common_2.8.3.xml
+ /usr/share/hadoop/common/jdiff/hadoop-core_0.22.0.xml
++/usr/share/hadoop/common/jdiff/hadoop_0.18.1.xml
++/usr/share/hadoop/common/jdiff/hadoop-core_0.20.0.xml
++/usr/share/hadoop/common/jdiff/Apache_Hadoop_Common_2.7.2.xml
+ /usr/share/hadoop/common/jdiff/Null.java
+-/usr/share/hadoop/common/lib/activation-1.1.jar
+-/usr/share/hadoop/common/lib/apacheds-i18n-2.0.0-M15.jar
+-/usr/share/hadoop/common/lib/apacheds-kerberos-codec-2.0.0-M15.jar
+-/usr/share/hadoop/common/lib/api-asn1-api-1.0.0-M20.jar
+-/usr/share/hadoop/common/lib/api-util-1.0.0-M20.jar
+-/usr/share/hadoop/common/lib/asm-3.2.jar
+-/usr/share/hadoop/common/lib/avro-1.7.4.jar
+-/usr/share/hadoop/common/lib/commons-beanutils-1.7.0.jar
+-/usr/share/hadoop/common/lib/commons-beanutils-core-1.8.0.jar
+-/usr/share/hadoop/common/lib/commons-cli-1.2.jar
+-/usr/share/hadoop/common/lib/commons-codec-1.4.jar
+-/usr/share/hadoop/common/lib/commons-collections-3.2.2.jar
+-/usr/share/hadoop/common/lib/commons-compress-1.4.1.jar
+-/usr/share/hadoop/common/lib/commons-configuration-1.6.jar
+-/usr/share/hadoop/common/lib/commons-digester-1.8.jar
+-/usr/share/hadoop/common/lib/commons-io-2.4.jar
+-/usr/share/hadoop/common/lib/commons-lang-2.6.jar
+-/usr/share/hadoop/common/lib/commons-logging-1.1.3.jar
+-/usr/share/hadoop/common/lib/commons-math3-3.1.1.jar
+-/usr/share/hadoop/common/lib/commons-net-3.1.jar
+-/usr/share/hadoop/common/lib/curator-client-2.7.1.jar
+-/usr/share/hadoop/common/lib/curator-framework-2.7.1.jar
+-/usr/share/hadoop/common/lib/curator-recipes-2.7.1.jar
+-/usr/share/hadoop/common/lib/gson-2.2.4.jar
+-/usr/share/hadoop/common/lib/guava-11.0.2.jar
+-/usr/share/hadoop/common/lib/hadoop-annotations-2.8.5.jar
+-/usr/share/hadoop/common/lib/hadoop-auth-2.8.5.jar
+-/usr/share/hadoop/common/lib/hamcrest-core-1.3.jar
+-/usr/share/hadoop/common/lib/htrace-core4-4.0.1-incubating.jar
+-/usr/share/hadoop/common/lib/httpclient-4.5.2.jar
+-/usr/share/hadoop/common/lib/httpcore-4.4.4.jar
+-/usr/share/hadoop/common/lib/jackson-core-asl-1.9.13.jar
+-/usr/share/hadoop/common/lib/jackson-jaxrs-1.9.13.jar
+-/usr/share/hadoop/common/lib/jackson-mapper-asl-1.9.13.jar
+-/usr/share/hadoop/common/lib/jackson-xc-1.9.13.jar
+-/usr/share/hadoop/common/lib/java-xmlbuilder-0.4.jar
+-/usr/share/hadoop/common/lib/jaxb-api-2.2.2.jar
+-/usr/share/hadoop/common/lib/jaxb-impl-2.2.3-1.jar
+-/usr/share/hadoop/common/lib/jcip-annotations-1.0-1.jar
+-/usr/share/hadoop/common/lib/jersey-core-1.9.jar
+-/usr/share/hadoop/common/lib/jersey-json-1.9.jar
+-/usr/share/hadoop/common/lib/jersey-server-1.9.jar
+-/usr/share/hadoop/common/lib/jets3t-0.9.0.jar
+-/usr/share/hadoop/common/lib/jettison-1.1.jar
+-/usr/share/hadoop/common/lib/jetty-6.1.26.jar
+-/usr/share/hadoop/common/lib/jetty-sslengine-6.1.26.jar
+-/usr/share/hadoop/common/lib/jetty-util-6.1.26.jar
+-/usr/share/hadoop/common/lib/jsch-0.1.54.jar
+-/usr/share/hadoop/common/lib/json-smart-1.3.1.jar
+-/usr/share/hadoop/common/lib/jsp-api-2.1.jar
+-/usr/share/hadoop/common/lib/jsr305-3.0.0.jar
+-/usr/share/hadoop/common/lib/junit-4.11.jar
+-/usr/share/hadoop/common/lib/log4j-1.2.17.jar
+-/usr/share/hadoop/common/lib/mockito-all-1.8.5.jar
+-/usr/share/hadoop/common/lib/netty-3.6.2.Final.jar
+-/usr/share/hadoop/common/lib/netty-all-4.0.23.Final.jar
+-/usr/share/hadoop/common/lib/nimbus-jose-jwt-4.41.1.jar
+-/usr/share/hadoop/common/lib/paranamer-2.3.jar
+-/usr/share/hadoop/common/lib/protobuf-java-3.6.1.jar
+-/usr/share/hadoop/common/lib/servlet-api-2.5.jar
+-/usr/share/hadoop/common/lib/slf4j-api-1.7.10.jar
+-/usr/share/hadoop/common/lib/slf4j-log4j12-1.7.10.jar
+-/usr/share/hadoop/common/lib/snappy-java-1.0.4.1.jar
+-/usr/share/hadoop/common/lib/stax-api-1.0-2.jar
+-/usr/share/hadoop/common/lib/xmlenc-0.52.jar
+-/usr/share/hadoop/common/lib/xz-1.0.jar
+-/usr/share/hadoop/common/lib/zookeeper-3.4.6.jar
+-/usr/share/hadoop/common/templates/core-site.xml
+-/usr/share/hadoop/hdfs/hadoop-hdfs-2.8.5.jar
+-/usr/share/hadoop/hdfs/hadoop-hdfs-2.8.5-tests.jar
+-/usr/share/hadoop/hdfs/hadoop-hdfs-client-2.8.5.jar
+-/usr/share/hadoop/hdfs/hadoop-hdfs-client-2.8.5-tests.jar
+-/usr/share/hadoop/hdfs/hadoop-hdfs-native-client-2.8.5.jar
+-/usr/share/hadoop/hdfs/hadoop-hdfs-native-client-2.8.5-tests.jar
+-/usr/share/hadoop/hdfs/hadoop-hdfs-nfs-2.8.5.jar
+-/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_2.6.0.xml
+-/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_2.7.2.xml
+-/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_2.8.0.xml
+-/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_2.8.2.xml
+-/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_2.8.3.xml
+-/usr/share/hadoop/hdfs/jdiff/hadoop-hdfs_0.20.0.xml
+-/usr/share/hadoop/hdfs/jdiff/hadoop-hdfs_0.21.0.xml
+-/usr/share/hadoop/hdfs/jdiff/hadoop-hdfs_0.22.0.xml
+-/usr/share/hadoop/hdfs/jdiff/Null.java
+-/usr/share/hadoop/hdfs/lib/asm-3.2.jar
+-/usr/share/hadoop/hdfs/lib/commons-cli-1.2.jar
+-/usr/share/hadoop/hdfs/lib/commons-codec-1.4.jar
+-/usr/share/hadoop/hdfs/lib/commons-daemon-1.0.13.jar
+-/usr/share/hadoop/hdfs/lib/commons-io-2.4.jar
+-/usr/share/hadoop/hdfs/lib/commons-lang-2.6.jar
+-/usr/share/hadoop/hdfs/lib/commons-logging-1.1.3.jar
+-/usr/share/hadoop/hdfs/lib/guava-11.0.2.jar
+-/usr/share/hadoop/hdfs/lib/hadoop-hdfs-client-2.8.5.jar
+-/usr/share/hadoop/hdfs/lib/htrace-core4-4.0.1-incubating.jar
+-/usr/share/hadoop/hdfs/lib/jackson-core-asl-1.9.13.jar
+-/usr/share/hadoop/hdfs/lib/jackson-mapper-asl-1.9.13.jar
+-/usr/share/hadoop/hdfs/lib/jersey-core-1.9.jar
+-/usr/share/hadoop/hdfs/lib/jersey-server-1.9.jar
+-/usr/share/hadoop/hdfs/lib/jetty-6.1.26.jar
+-/usr/share/hadoop/hdfs/lib/jetty-util-6.1.26.jar
+-/usr/share/hadoop/hdfs/lib/jsr305-3.0.0.jar
+-/usr/share/hadoop/hdfs/lib/leveldbjni-all-1.8.jar
+-/usr/share/hadoop/hdfs/lib/log4j-1.2.17.jar
+-/usr/share/hadoop/hdfs/lib/netty-3.6.2.Final.jar
+-/usr/share/hadoop/hdfs/lib/netty-all-4.0.23.Final.jar
+-/usr/share/hadoop/hdfs/lib/okhttp-2.4.0.jar
+-/usr/share/hadoop/hdfs/lib/okio-1.4.0.jar
+-/usr/share/hadoop/hdfs/lib/protobuf-java-3.6.1.jar
+-/usr/share/hadoop/hdfs/lib/servlet-api-2.5.jar
+-/usr/share/hadoop/hdfs/lib/xercesImpl-2.9.1.jar
+-/usr/share/hadoop/hdfs/lib/xml-apis-1.3.04.jar
+-/usr/share/hadoop/hdfs/lib/xmlenc-0.52.jar
+-/usr/share/hadoop/hdfs/templates/hdfs-site.xml
++/usr/share/hadoop/hdfs/hadoop-hdfs-native-client-3.2.0.jar
++/usr/share/hadoop/hdfs/hadoop-hdfs-nfs-3.2.0.jar
++/usr/share/hadoop/hdfs/hadoop-hdfs-rbf-3.2.0-tests.jar
+ /usr/share/hadoop/hdfs/webapps/datanode/datanode.html
+ /usr/share/hadoop/hdfs/webapps/datanode/dn.js
+-/usr/share/hadoop/hdfs/webapps/datanode/index.html
+-/usr/share/hadoop/hdfs/webapps/datanode/robots.txt
+ /usr/share/hadoop/hdfs/webapps/datanode/WEB-INF/web.xml
+-/usr/share/hadoop/hdfs/webapps/hdfs/dfshealth.html
+-/usr/share/hadoop/hdfs/webapps/hdfs/dfshealth.js
+-/usr/share/hadoop/hdfs/webapps/hdfs/explorer.html
+-/usr/share/hadoop/hdfs/webapps/hdfs/explorer.js
+-/usr/share/hadoop/hdfs/webapps/hdfs/index.html
+-/usr/share/hadoop/hdfs/webapps/hdfs/WEB-INF/web.xml
+-/usr/share/hadoop/hdfs/webapps/journal/index.html
+-/usr/share/hadoop/hdfs/webapps/journal/WEB-INF/web.xml
+-/usr/share/hadoop/hdfs/webapps/nfs3/WEB-INF/web.xml
+-/usr/share/hadoop/hdfs/webapps/secondary/index.html
+-/usr/share/hadoop/hdfs/webapps/secondary/snn.js
+-/usr/share/hadoop/hdfs/webapps/secondary/status.html
+-/usr/share/hadoop/hdfs/webapps/secondary/WEB-INF/web.xml
+-/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.0.2/css/bootstrap-editable.css
+-/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.0.2/css/bootstrap.min.css
+-/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.0.2/fonts/glyphicons-halflings-regular.eot
+-/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.0.2/fonts/glyphicons-halflings-regular.svg
+-/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.0.2/fonts/glyphicons-halflings-regular.ttf
+-/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.0.2/fonts/glyphicons-halflings-regular.woff
+-/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.0.2/img/clear.png
+-/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.0.2/img/loading.gif
+-/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.0.2/js/bootstrap-editable.min.js
+-/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.0.2/js/bootstrap.min.js
+-/usr/share/hadoop/hdfs/webapps/static/d3-v4.1.1.min.js
+-/usr/share/hadoop/hdfs/webapps/static/dataTables.bootstrap.css
++/usr/share/hadoop/hdfs/webapps/datanode/robots.txt
++/usr/share/hadoop/hdfs/webapps/datanode/index.html
++/usr/share/hadoop/hdfs/webapps/static/rest-csrf.js
+ /usr/share/hadoop/hdfs/webapps/static/dataTables.bootstrap.js
++/usr/share/hadoop/hdfs/webapps/static/json-bignum.js
++/usr/share/hadoop/hdfs/webapps/static/jquery.dataTables.min.js
++/usr/share/hadoop/hdfs/webapps/static/dataTables.bootstrap.css
++/usr/share/hadoop/hdfs/webapps/static/d3-v4.1.1.min.js.gz
++/usr/share/hadoop/hdfs/webapps/static/json-bignum.js.gz
++/usr/share/hadoop/hdfs/webapps/static/d3-v4.1.1.min.js
++/usr/share/hadoop/hdfs/webapps/static/moment.min.js.gz
++/usr/share/hadoop/hdfs/webapps/static/dust-helpers-1.1.1.min.js.gz
+ /usr/share/hadoop/hdfs/webapps/static/dfs-dust.js
+-/usr/share/hadoop/hdfs/webapps/static/dust-full-2.0.0.min.js
+-/usr/share/hadoop/hdfs/webapps/static/dust-helpers-1.1.1.min.js
++/usr/share/hadoop/hdfs/webapps/static/rest-csrf.js.gz
++/usr/share/hadoop/hdfs/webapps/static/rbf.css
++/usr/share/hadoop/hdfs/webapps/static/hadoop.css.gz
+ /usr/share/hadoop/hdfs/webapps/static/hadoop.css
+-/usr/share/hadoop/hdfs/webapps/static/jquery-1.10.2.min.js
+-/usr/share/hadoop/hdfs/webapps/static/jquery.dataTables.min.js
+-/usr/share/hadoop/hdfs/webapps/static/json-bignum.js
+ /usr/share/hadoop/hdfs/webapps/static/moment.min.js
+-/usr/share/hadoop/hdfs/webapps/static/rest-csrf.js
+-/usr/share/hadoop/httpfs/tomcat/bin/bootstrap.jar
+-/usr/share/hadoop/httpfs/tomcat/bin/catalina.bat
+-/usr/share/hadoop/httpfs/tomcat/bin/catalina.sh
+-/usr/share/hadoop/httpfs/tomcat/bin/catalina-tasks.xml
+-/usr/share/hadoop/httpfs/tomcat/bin/commons-daemon.jar
+-/usr/share/hadoop/httpfs/tomcat/bin/commons-daemon-native.tar.gz
+-/usr/share/hadoop/httpfs/tomcat/bin/cpappend.bat
+-/usr/share/hadoop/httpfs/tomcat/bin/daemon.sh
+-/usr/share/hadoop/httpfs/tomcat/bin/digest.bat
+-/usr/share/hadoop/httpfs/tomcat/bin/digest.sh
+-/usr/share/hadoop/httpfs/tomcat/bin/setclasspath.bat
+-/usr/share/hadoop/httpfs/tomcat/bin/setclasspath.sh
+-/usr/share/hadoop/httpfs/tomcat/bin/shutdown.bat
+-/usr/share/hadoop/httpfs/tomcat/bin/shutdown.sh
+-/usr/share/hadoop/httpfs/tomcat/bin/startup.bat
+-/usr/share/hadoop/httpfs/tomcat/bin/startup.sh
+-/usr/share/hadoop/httpfs/tomcat/bin/tomcat-juli.jar
+-/usr/share/hadoop/httpfs/tomcat/bin/tomcat-native.tar.gz
+-/usr/share/hadoop/httpfs/tomcat/bin/tool-wrapper.bat
+-/usr/share/hadoop/httpfs/tomcat/bin/tool-wrapper.sh
+-/usr/share/hadoop/httpfs/tomcat/bin/version.bat
+-/usr/share/hadoop/httpfs/tomcat/bin/version.sh
+-/usr/share/hadoop/httpfs/tomcat/conf/catalina.policy
+-/usr/share/hadoop/httpfs/tomcat/conf/catalina.properties
+-/usr/share/hadoop/httpfs/tomcat/conf/context.xml
+-/usr/share/hadoop/httpfs/tomcat/conf/logging.properties
+-/usr/share/hadoop/httpfs/tomcat/conf/server.xml
+-/usr/share/hadoop/httpfs/tomcat/conf/ssl-server.xml
+-/usr/share/hadoop/httpfs/tomcat/conf/tomcat-users.xml
+-/usr/share/hadoop/httpfs/tomcat/conf/web.xml
+-/usr/share/hadoop/httpfs/tomcat/lib/annotations-api.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/catalina-ant.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/catalina-ha.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/catalina.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/catalina-tribes.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/ecj-4.3.1.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/el-api.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/jasper-el.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/jasper.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/jsp-api.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/servlet-api.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/tomcat-coyote.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/tomcat-dbcp.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/tomcat-i18n-es.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/tomcat-i18n-fr.jar
+-/usr/share/hadoop/httpfs/tomcat/lib/tomcat-i18n-ja.jar
+-/usr/share/hadoop/httpfs/tomcat/LICENSE
+-/usr/share/hadoop/httpfs/tomcat/NOTICE
+-/usr/share/hadoop/httpfs/tomcat/RELEASE-NOTES
+-/usr/share/hadoop/httpfs/tomcat/RUNNING.txt
+-/usr/share/hadoop/httpfs/tomcat/temp/safeToDelete.tmp
+-/usr/share/hadoop/httpfs/tomcat/webapps/ROOT/index.html
+-/usr/share/hadoop/httpfs/tomcat/webapps/ROOT/WEB-INF/web.xml
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/default-log4j.properties
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/httpfs-default.xml
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/httpfs.properties
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/META-INF/LICENSE.txt
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/META-INF/NOTICE.txt
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/client/HttpFSFileSystem$1.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/client/HttpFSFileSystem$2.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/client/HttpFSFileSystem$3.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/client/HttpFSFileSystem$4.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/client/HttpFSFileSystem$5.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/client/HttpFSFileSystem.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/client/HttpFSFileSystem$FILE_TYPE.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/client/HttpFSFileSystem$HttpFSDataInputStream.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/client/HttpFSFileSystem$HttpFSDataOutputStream.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/client/HttpFSFileSystem$Operation.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/client/HttpFSUtils.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/client/HttpsFSFileSystem.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/CheckUploadContentTypeFilter.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSAclStatus.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSAppend.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSConcat.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSContentSummary.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSCreate.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSDelete.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSFileChecksum.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSFileStatus.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSGetAllStoragePolicies.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSGetStoragePolicy.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSGetXAttrs.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSHomeDir.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSListStatus.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSListXAttrs.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSMkdirs.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSModifyAclEntries.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSOpen.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSRemoveAcl.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSRemoveAclEntries.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSRemoveDefaultAcl.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSRemoveXAttr.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSRename.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSSetAcl.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSSetOwner.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSSetPermission.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSSetReplication.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSSetStoragePolicy.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSSetTimes.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSSetXAttr.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSTruncate.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/FSOperations$FSUnsetStoragePolicy.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSAuthenticationFilter.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSExceptionProvider.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$AccessTimeParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$AclPermissionParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$BlockSizeParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$DataParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$DestinationParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$FilterParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$GroupParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$LenParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$ModifiedTimeParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$NewLengthParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$OffsetParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$OperationParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$OverwriteParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$OwnerParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$PermissionParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$PolicyNameParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$RecursiveParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$ReplicationParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$SourcesParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$XAttrEncodingParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$XAttrNameParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$XAttrSetFlagParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSParametersProvider$XAttrValueParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSReleaseFilter.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSServer$1.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSServer$2.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSServer.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/fs/http/server/HttpFSServerWebApp.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/lang/RunnableCallable.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/lang/XException.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/lang/XException$ERROR.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/server/BaseService.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/server/Server.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/server/ServerException.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/server/ServerException$ERROR.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/server/Server$Status.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/server/Service.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/server/ServiceException.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/FileSystemAccess.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/FileSystemAccessException.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/FileSystemAccessException$ERROR.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/FileSystemAccess$FileSystemExecutor.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/Groups.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/hadoop/FileSystemAccessService$1.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/hadoop/FileSystemAccessService$2.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/hadoop/FileSystemAccessService$3.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/hadoop/FileSystemAccessService$4.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/hadoop/FileSystemAccessService$CachedFileSystem.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/hadoop/FileSystemAccessService.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/hadoop/FileSystemAccessService$FileSystemCachePurger.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/Instrumentation.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/Instrumentation$Cron.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/instrumentation/InstrumentationService$1.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/instrumentation/InstrumentationService$2.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/instrumentation/InstrumentationService$3.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/instrumentation/InstrumentationService.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/instrumentation/InstrumentationService$Cron.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/instrumentation/InstrumentationService$Sampler.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/instrumentation/InstrumentationService$SamplersRunnable.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/instrumentation/InstrumentationService$Timer.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/instrumentation/InstrumentationService$VariableHolder.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/Instrumentation$Variable.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/Scheduler.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/scheduler/SchedulerService$1.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/scheduler/SchedulerService.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/service/security/GroupsService.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/servlet/FileSystemReleaseFilter.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/servlet/HostnameFilter.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/servlet/MDCFilter.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/servlet/ServerWebApp.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/util/Check.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/util/ConfigurationUtils.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/BooleanParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/ByteParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/EnumParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/EnumSetParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/ExceptionProvider.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/InputStreamEntity.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/IntegerParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/JSONMapProvider.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/JSONProvider.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/LongParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/Param.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/Parameters.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/ParametersProvider.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/ShortParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/classes/org/apache/hadoop/lib/wsrs/StringParam.class
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/activation-1.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/apacheds-i18n-2.0.0-M15.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/apacheds-kerberos-codec-2.0.0-M15.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/api-asn1-api-1.0.0-M20.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/api-util-1.0.0-M20.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/asm-3.2.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/avro-1.7.4.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-beanutils-1.7.0.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-beanutils-core-1.8.0.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-cli-1.2.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-codec-1.4.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-collections-3.2.2.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-compress-1.4.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-configuration-1.6.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-daemon-1.0.13.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-digester-1.8.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-io-2.4.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-lang-2.6.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-logging-1.1.3.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-math3-3.1.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/commons-net-3.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/curator-client-2.7.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/curator-framework-2.7.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/curator-recipes-2.7.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/gson-2.2.4.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/guava-11.0.2.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/hadoop-annotations-2.8.5.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/hadoop-auth-2.8.5.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/hadoop-common-2.8.5.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/hadoop-hdfs-2.8.5.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/hadoop-hdfs-client-2.8.5.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/htrace-core4-4.0.1-incubating.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/httpclient-4.5.2.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/httpcore-4.4.4.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jackson-core-asl-1.9.13.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jackson-jaxrs-1.9.13.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jackson-mapper-asl-1.9.13.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jackson-xc-1.9.13.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jaxb-api-2.2.2.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jaxb-impl-2.2.3-1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jcip-annotations-1.0-1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jersey-core-1.9.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jersey-json-1.9.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jersey-server-1.9.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jettison-1.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jetty-sslengine-6.1.26.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jline-0.9.94.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jsch-0.1.54.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/json-simple-1.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/json-smart-1.3.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/jsr305-3.0.0.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/leveldbjni-all-1.8.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/log4j-1.2.17.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/netty-3.6.2.Final.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/netty-all-4.0.23.Final.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/nimbus-jose-jwt-4.41.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/okhttp-2.4.0.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/okio-1.4.0.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/paranamer-2.3.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/protobuf-java-3.6.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/slf4j-api-1.7.10.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/slf4j-log4j12-1.7.10.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/snappy-java-1.0.4.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/xercesImpl-2.9.1.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/xml-apis-1.3.04.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/xmlenc-0.52.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/xz-1.0.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/lib/zookeeper-3.4.6.jar
+-/usr/share/hadoop/httpfs/tomcat/webapps/webhdfs/WEB-INF/web.xml
+-/usr/share/hadoop/kms/tomcat/bin/bootstrap.jar
+-/usr/share/hadoop/kms/tomcat/bin/catalina.bat
+-/usr/share/hadoop/kms/tomcat/bin/catalina.sh
+-/usr/share/hadoop/kms/tomcat/bin/catalina-tasks.xml
+-/usr/share/hadoop/kms/tomcat/bin/commons-daemon.jar
+-/usr/share/hadoop/kms/tomcat/bin/commons-daemon-native.tar.gz
+-/usr/share/hadoop/kms/tomcat/bin/cpappend.bat
+-/usr/share/hadoop/kms/tomcat/bin/daemon.sh
+-/usr/share/hadoop/kms/tomcat/bin/digest.bat
+-/usr/share/hadoop/kms/tomcat/bin/digest.sh
+-/usr/share/hadoop/kms/tomcat/bin/setclasspath.bat
+-/usr/share/hadoop/kms/tomcat/bin/setclasspath.sh
+-/usr/share/hadoop/kms/tomcat/bin/shutdown.bat
+-/usr/share/hadoop/kms/tomcat/bin/shutdown.sh
+-/usr/share/hadoop/kms/tomcat/bin/startup.bat
+-/usr/share/hadoop/kms/tomcat/bin/startup.sh
+-/usr/share/hadoop/kms/tomcat/bin/tomcat-juli.jar
+-/usr/share/hadoop/kms/tomcat/bin/tomcat-native.tar.gz
+-/usr/share/hadoop/kms/tomcat/bin/tool-wrapper.bat
+-/usr/share/hadoop/kms/tomcat/bin/tool-wrapper.sh
+-/usr/share/hadoop/kms/tomcat/bin/version.bat
+-/usr/share/hadoop/kms/tomcat/bin/version.sh
+-/usr/share/hadoop/kms/tomcat/conf/catalina.policy
+-/usr/share/hadoop/kms/tomcat/conf/catalina.properties
+-/usr/share/hadoop/kms/tomcat/conf/context.xml
+-/usr/share/hadoop/kms/tomcat/conf/logging.properties
+-/usr/share/hadoop/kms/tomcat/conf/server.xml
+-/usr/share/hadoop/kms/tomcat/conf/ssl-server.xml.conf
+-/usr/share/hadoop/kms/tomcat/conf/tomcat-users.xml
+-/usr/share/hadoop/kms/tomcat/conf/web.xml
+-/usr/share/hadoop/kms/tomcat/lib/annotations-api.jar
+-/usr/share/hadoop/kms/tomcat/lib/catalina-ant.jar
+-/usr/share/hadoop/kms/tomcat/lib/catalina-ha.jar
+-/usr/share/hadoop/kms/tomcat/lib/catalina.jar
+-/usr/share/hadoop/kms/tomcat/lib/catalina-tribes.jar
+-/usr/share/hadoop/kms/tomcat/lib/ecj-4.3.1.jar
+-/usr/share/hadoop/kms/tomcat/lib/el-api.jar
+-/usr/share/hadoop/kms/tomcat/lib/jasper-el.jar
+-/usr/share/hadoop/kms/tomcat/lib/jasper.jar
+-/usr/share/hadoop/kms/tomcat/lib/jsp-api.jar
+-/usr/share/hadoop/kms/tomcat/lib/servlet-api.jar
+-/usr/share/hadoop/kms/tomcat/lib/tomcat-coyote.jar
+-/usr/share/hadoop/kms/tomcat/lib/tomcat-dbcp.jar
+-/usr/share/hadoop/kms/tomcat/lib/tomcat-i18n-es.jar
+-/usr/share/hadoop/kms/tomcat/lib/tomcat-i18n-fr.jar
+-/usr/share/hadoop/kms/tomcat/lib/tomcat-i18n-ja.jar
+-/usr/share/hadoop/kms/tomcat/LICENSE
+-/usr/share/hadoop/kms/tomcat/NOTICE
+-/usr/share/hadoop/kms/tomcat/RELEASE-NOTES
+-/usr/share/hadoop/kms/tomcat/RUNNING.txt
+-/usr/share/hadoop/kms/tomcat/temp/safeToDelete.tmp
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/activation-1.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/apacheds-i18n-2.0.0-M15.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/apacheds-kerberos-codec-2.0.0-M15.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/api-asn1-api-1.0.0-M20.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/api-i18n-1.0.0-M20.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/api-util-1.0.0-M20.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/asm-3.2.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/avro-1.7.4.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-beanutils-1.7.0.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-beanutils-core-1.8.0.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-cli-1.2.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-codec-1.4.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-collections-3.2.2.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-compress-1.4.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-configuration-1.6.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-digester-1.8.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-io-2.4.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-lang-2.6.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-logging-1.1.3.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-math3-3.1.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/commons-net-3.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/curator-client-2.7.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/curator-framework-2.7.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/curator-recipes-2.7.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/gson-2.2.4.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/guava-11.0.2.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/hadoop-annotations-2.8.5.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/hadoop-auth-2.8.5.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/hadoop-common-2.8.5.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/hadoop-kms-2.8.5.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/htrace-core4-4.0.1-incubating.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/httpclient-4.5.2.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/httpcore-4.4.4.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jackson-core-asl-1.9.13.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jackson-jaxrs-1.9.13.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jackson-mapper-asl-1.9.13.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jackson-xc-1.9.13.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jaxb-api-2.2.2.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jaxb-impl-2.2.3-1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jcip-annotations-1.0-1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jersey-core-1.9.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jersey-json-1.9.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jersey-server-1.9.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jettison-1.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jetty-6.1.26.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jetty-sslengine-6.1.26.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jetty-util-6.1.26.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jline-0.9.94.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jsch-0.1.54.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/json-smart-1.3.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jsr305-3.0.0.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/jul-to-slf4j-1.7.10.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/log4j-1.2.17.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/metrics-core-3.0.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/netty-3.6.2.Final.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/nimbus-jose-jwt-4.41.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/paranamer-2.3.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/protobuf-java-3.6.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/slf4j-api-1.7.10.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/slf4j-log4j12-1.7.10.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/snappy-java-1.0.4.1.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/xmlenc-0.52.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/xz-1.0.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/lib/zookeeper-3.4.6.jar
+-/usr/share/hadoop/kms/tomcat/webapps/kms/WEB-INF/web.xml
+-/usr/share/hadoop/kms/tomcat/webapps/ROOT/index.html
+-/usr/share/hadoop/kms/tomcat/webapps/ROOT/WEB-INF/web.xml
+-/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-app-2.8.5.jar
+-/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-common-2.8.5.jar
+-/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-core-2.8.5.jar
+-/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-hs-2.8.5.jar
+-/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-hs-plugins-2.8.5.jar
+-/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-jobclient-2.8.5.jar
+-/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-jobclient-2.8.5-tests.jar
+-/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-shuffle-2.8.5.jar
+-/usr/share/hadoop/mapreduce/hadoop-mapreduce-examples-2.8.5.jar
+-/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Common_2.6.0.xml
+-/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Common_2.7.2.xml
++/usr/share/hadoop/hdfs/webapps/static/dust-helpers-1.1.1.min.js
++/usr/share/hadoop/hdfs/webapps/static/dust-full-2.0.0.min.js
++/usr/share/hadoop/hdfs/webapps/static/dfs-dust.js.gz
++/usr/share/hadoop/hdfs/webapps/static/jquery-3.3.1.min.js.gz
++/usr/share/hadoop/hdfs/webapps/static/dataTables.bootstrap.css.gz
++/usr/share/hadoop/hdfs/webapps/static/jquery-3.3.1.min.js
++/usr/share/hadoop/hdfs/webapps/static/dataTables.bootstrap.js.gz
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap.css
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap.css.map
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap-theme.css
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap-theme.min.css.gz
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap.css.gz
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap-editable.css.gz
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap-theme.css.map
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap-editable.css
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap-theme.min.css.map
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap-theme.css.gz
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap.min.css
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap.min.css.gz
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap.min.css.map
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/css/bootstrap-theme.min.css
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/fonts/glyphicons-halflings-regular.woff2
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/fonts/glyphicons-halflings-regular.svg
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/fonts/glyphicons-halflings-regular.eot
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/fonts/glyphicons-halflings-regular.ttf
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/fonts/glyphicons-halflings-regular.woff
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/js/bootstrap-editable.min.js
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/js/bootstrap.js.gz
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/js/bootstrap-editable.min.js.gz
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/js/bootstrap.js
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/js/npm.js
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/js/bootstrap.min.js.gz
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/js/bootstrap.min.js
++/usr/share/hadoop/hdfs/webapps/static/bootstrap-3.3.7/js/npm.js.gz
++/usr/share/hadoop/hdfs/webapps/static/dust-full-2.0.0.min.js.gz
++/usr/share/hadoop/hdfs/webapps/static/jquery.dataTables.min.js.gz
++/usr/share/hadoop/hdfs/webapps/nfs3/WEB-INF/web.xml
++/usr/share/hadoop/hdfs/webapps/router/WEB-INF/web.xml
++/usr/share/hadoop/hdfs/webapps/router/robots.txt
++/usr/share/hadoop/hdfs/webapps/router/index.html
++/usr/share/hadoop/hdfs/webapps/router/federationhealth.html
++/usr/share/hadoop/hdfs/webapps/router/federationhealth.js
++/usr/share/hadoop/hdfs/webapps/secondary/status.html
++/usr/share/hadoop/hdfs/webapps/secondary/WEB-INF/web.xml
++/usr/share/hadoop/hdfs/webapps/secondary/robots.txt
++/usr/share/hadoop/hdfs/webapps/secondary/index.html
++/usr/share/hadoop/hdfs/webapps/secondary/snn.js
++/usr/share/hadoop/hdfs/webapps/journal/WEB-INF/web.xml
++/usr/share/hadoop/hdfs/webapps/journal/robots.txt
++/usr/share/hadoop/hdfs/webapps/journal/index.html
++/usr/share/hadoop/hdfs/webapps/hdfs/explorer.html
++/usr/share/hadoop/hdfs/webapps/hdfs/dfshealth.js
++/usr/share/hadoop/hdfs/webapps/hdfs/explorer.js
++/usr/share/hadoop/hdfs/webapps/hdfs/WEB-INF/web.xml
++/usr/share/hadoop/hdfs/webapps/hdfs/robots.txt
++/usr/share/hadoop/hdfs/webapps/hdfs/dfshealth.html
++/usr/share/hadoop/hdfs/webapps/hdfs/index.html
++/usr/share/hadoop/hdfs/hadoop-hdfs-3.2.0.jar
++/usr/share/hadoop/hdfs/hadoop-hdfs-native-client-3.2.0-tests.jar
++/usr/share/hadoop/hdfs/hadoop-hdfs-client-3.2.0-tests.jar
++/usr/share/hadoop/hdfs/hadoop-hdfs-client-3.2.0.jar
++/usr/share/hadoop/hdfs/sources/hadoop-hdfs-rbf-3.2.0-test-sources.jar
++/usr/share/hadoop/hdfs/sources/hadoop-hdfs-3.2.0-test-sources.jar
++/usr/share/hadoop/hdfs/sources/hadoop-hdfs-rbf-3.2.0-sources.jar
++/usr/share/hadoop/hdfs/sources/hadoop-hdfs-3.2.0-sources.jar
++/usr/share/hadoop/hdfs/sources/hadoop-hdfs-native-client-3.2.0-test-sources.jar
++/usr/share/hadoop/hdfs/sources/hadoop-hdfs-client-3.2.0-test-sources.jar
++/usr/share/hadoop/hdfs/sources/hadoop-hdfs-native-client-3.2.0-sources.jar
++/usr/share/hadoop/hdfs/sources/hadoop-hdfs-client-3.2.0-sources.jar
++/usr/share/hadoop/hdfs/hadoop-hdfs-rbf-3.2.0.jar
++/usr/share/hadoop/hdfs/lib/jetty-util-ajax-9.3.24.v20180605.jar
++/usr/share/hadoop/hdfs/lib/jcip-annotations-1.0-1.jar
++/usr/share/hadoop/hdfs/lib/netty-all-4.0.52.Final.jar
++/usr/share/hadoop/hdfs/lib/jetty-servlet-9.3.24.v20180605.jar
++/usr/share/hadoop/hdfs/lib/token-provider-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/jetty-webapp-9.3.24.v20180605.jar
++/usr/share/hadoop/hdfs/lib/hadoop-auth-3.2.0.jar
++/usr/share/hadoop/hdfs/lib/dnsjava-2.1.7.jar
++/usr/share/hadoop/hdfs/lib/stax2-api-3.1.4.jar
++/usr/share/hadoop/hdfs/lib/asm-5.0.4.jar
++/usr/share/hadoop/hdfs/lib/kerby-pkix-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/curator-framework-2.12.0.jar
++/usr/share/hadoop/hdfs/lib/xz-1.0.jar
++/usr/share/hadoop/hdfs/lib/jetty-http-9.3.24.v20180605.jar
++/usr/share/hadoop/hdfs/lib/jackson-databind-2.9.5.jar
++/usr/share/hadoop/hdfs/lib/commons-net-3.6.jar
++/usr/share/hadoop/hdfs/lib/kerby-asn1-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/gson-2.2.4.jar
++/usr/share/hadoop/hdfs/lib/commons-logging-1.1.3.jar
++/usr/share/hadoop/hdfs/lib/jersey-server-1.19.jar
++/usr/share/hadoop/hdfs/lib/jackson-annotations-2.9.5.jar
++/usr/share/hadoop/hdfs/lib/commons-lang3-3.7.jar
++/usr/share/hadoop/hdfs/lib/netty-3.10.5.Final.jar
++/usr/share/hadoop/hdfs/lib/jersey-servlet-1.19.jar
++/usr/share/hadoop/hdfs/lib/jackson-core-asl-1.9.13.jar
++/usr/share/hadoop/hdfs/lib/kerb-core-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/paranamer-2.3.jar
++/usr/share/hadoop/hdfs/lib/jackson-core-2.9.5.jar
++/usr/share/hadoop/hdfs/lib/jetty-security-9.3.24.v20180605.jar
++/usr/share/hadoop/hdfs/lib/javax.servlet-api-3.1.0.jar
++/usr/share/hadoop/hdfs/lib/hadoop-annotations-3.2.0.jar
++/usr/share/hadoop/hdfs/lib/jetty-util-9.3.24.v20180605.jar
++/usr/share/hadoop/hdfs/lib/jetty-xml-9.3.24.v20180605.jar
++/usr/share/hadoop/hdfs/lib/jsch-0.1.54.jar
++/usr/share/hadoop/hdfs/lib/commons-codec-1.11.jar
++/usr/share/hadoop/hdfs/lib/kerb-admin-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/jettison-1.1.jar
++/usr/share/hadoop/hdfs/lib/log4j-1.2.17.jar
++/usr/share/hadoop/hdfs/lib/kerb-common-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/jetty-io-9.3.24.v20180605.jar
++/usr/share/hadoop/hdfs/lib/curator-recipes-2.12.0.jar
++/usr/share/hadoop/hdfs/lib/kerb-identity-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/httpcore-4.4.4.jar
++/usr/share/hadoop/hdfs/lib/commons-cli-1.2.jar
++/usr/share/hadoop/hdfs/lib/httpclient-4.5.2.jar
++/usr/share/hadoop/hdfs/lib/commons-beanutils-1.9.3.jar
++/usr/share/hadoop/hdfs/lib/kerby-xdr-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/jetty-server-9.3.24.v20180605.jar
++/usr/share/hadoop/hdfs/lib/jaxb-api-2.2.11.jar
++/usr/share/hadoop/hdfs/lib/jaxb-impl-2.2.3-1.jar
++/usr/share/hadoop/hdfs/lib/javax.activation-api-1.2.0.jar
++/usr/share/hadoop/hdfs/lib/kerb-crypto-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/commons-io-2.5.jar
++/usr/share/hadoop/hdfs/lib/kerb-util-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/json-smart-2.3.jar
++/usr/share/hadoop/hdfs/lib/guava-19.0.jar
++/usr/share/hadoop/hdfs/lib/json-simple-1.1.1.jar
++/usr/share/hadoop/hdfs/lib/nimbus-jose-jwt-4.41.1.jar
++/usr/share/hadoop/hdfs/lib/commons-math3-3.1.1.jar
++/usr/share/hadoop/hdfs/lib/accessors-smart-1.2.jar
++/usr/share/hadoop/hdfs/lib/commons-configuration2-2.1.1.jar
++/usr/share/hadoop/hdfs/lib/okhttp-2.7.5.jar
++/usr/share/hadoop/hdfs/lib/jsr311-api-1.1.1.jar
++/usr/share/hadoop/hdfs/lib/woodstox-core-5.0.3.jar
++/usr/share/hadoop/hdfs/lib/zookeeper-3.4.13.jar
++/usr/share/hadoop/hdfs/lib/kerb-server-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/kerb-client-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/jackson-jaxrs-1.9.13.jar
++/usr/share/hadoop/hdfs/lib/audience-annotations-0.5.0.jar
++/usr/share/hadoop/hdfs/lib/jackson-mapper-asl-1.9.13.jar
++/usr/share/hadoop/hdfs/lib/protobuf-java-3.6.1.jar
++/usr/share/hadoop/hdfs/lib/snappy-java-1.0.5.jar
++/usr/share/hadoop/hdfs/lib/re2j-1.1.jar
++/usr/share/hadoop/hdfs/lib/commons-compress-1.4.1.jar
++/usr/share/hadoop/hdfs/lib/kerby-util-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/commons-daemon-1.0.13.jar
++/usr/share/hadoop/hdfs/lib/kerb-simplekdc-1.0.1.jar
++/usr/share/hadoop/hdfs/lib/jsr305-3.0.0.jar
++/usr/share/hadoop/hdfs/lib/htrace-core4-4.1.0-incubating.jar
++/usr/share/hadoop/hdfs/lib/jersey-core-1.19.jar
++/usr/share/hadoop/hdfs/lib/jersey-json-1.19.jar
++/usr/share/hadoop/hdfs/lib/jackson-xc-1.9.13.jar
++/usr/share/hadoop/hdfs/lib/commons-text-1.4.jar
++/usr/share/hadoop/hdfs/lib/okio-1.6.0.jar
++/usr/share/hadoop/hdfs/lib/avro-1.7.7.jar
++/usr/share/hadoop/hdfs/lib/curator-client-2.12.0.jar
++/usr/share/hadoop/hdfs/lib/leveldbjni-all-1.8.jar
++/usr/share/hadoop/hdfs/lib/commons-collections-3.2.2.jar
++/usr/share/hadoop/hdfs/lib/kerby-config-1.0.1.jar
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_3.0.0-alpha3.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_3.0.0-alpha4.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_2.7.2.xml
++/usr/share/hadoop/hdfs/jdiff/hadoop-hdfs_0.22.0.xml
++/usr/share/hadoop/hdfs/jdiff/hadoop-hdfs_0.21.0.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_3.0.2.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_2.8.2.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_3.1.0.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_3.0.1.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_3.0.3.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_2.9.1.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_3.1.1.xml
++/usr/share/hadoop/hdfs/jdiff/hadoop-hdfs_0.20.0.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_2.6.0.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_3.0.0-alpha2.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_2.8.0.xml
++/usr/share/hadoop/hdfs/jdiff/Null.java
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_2.8.3.xml
++/usr/share/hadoop/hdfs/jdiff/Apache_Hadoop_HDFS_3.0.0.xml
++/usr/share/hadoop/hdfs/hadoop-hdfs-3.2.0-tests.jar
++/usr/share/hadoop/hdfs/hadoop-hdfs-httpfs-3.2.0.jar
++/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-jobclient-3.2.0.jar
++/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-app-3.2.0.jar
++/usr/share/hadoop/mapreduce/lib-examples/hsqldb-2.3.4.jar
++/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-common-3.2.0.jar
++/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-hs-3.2.0.jar
++/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-shuffle-3.2.0.jar
++/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-jobclient-3.2.0-tests.jar
++/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-nativetask-3.2.0.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-jobclient-3.2.0-test-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-hs-plugins-3.2.0-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-nativetask-3.2.0-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-hs-plugins-3.2.0-test-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-shuffle-3.2.0-test-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-examples-3.2.0-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-core-3.2.0-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-common-3.2.0-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-examples-3.2.0-test-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-app-3.2.0-test-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-hs-3.2.0-test-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-core-3.2.0-test-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-common-3.2.0-test-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-jobclient-3.2.0-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-hs-3.2.0-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-shuffle-3.2.0-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-nativetask-3.2.0-test-sources.jar
++/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-app-3.2.0-sources.jar
++/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-core-3.2.0.jar
++/usr/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.2.0.jar
++/usr/share/hadoop/mapreduce/lib/hamcrest-core-1.3.jar
++/usr/share/hadoop/mapreduce/lib/junit-4.11.jar
++/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-uploader-3.2.0.jar
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Common_3.1.0.xml
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_JobClient_3.1.0.xml
+ /usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Common_2.8.0.xml
+-/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Common_2.8.2.xml
+-/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Common_2.8.3.xml
+ /usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Core_2.6.0.xml
+-/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Core_2.7.2.xml
+-/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Core_2.8.0.xml
+ /usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Core_2.8.2.xml
+-/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Core_2.8.3.xml
+-/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_JobClient_2.6.0.xml
+-/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_JobClient_2.7.2.xml
+-/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_JobClient_2.8.0.xml
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Common_2.7.2.xml
+ /usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_JobClient_2.8.2.xml
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_JobClient_2.6.0.xml
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Core_2.8.3.xml
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Core_3.1.0.xml
+ /usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_JobClient_2.8.3.xml
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Common_2.8.3.xml
+ /usr/share/hadoop/mapreduce/jdiff/Null.java
+-/usr/share/hadoop/mapreduce/lib/aopalliance-1.0.jar
+-/usr/share/hadoop/mapreduce/lib/asm-3.2.jar
+-/usr/share/hadoop/mapreduce/lib/avro-1.7.4.jar
+-/usr/share/hadoop/mapreduce/lib/commons-compress-1.4.1.jar
+-/usr/share/hadoop/mapreduce/lib/commons-io-2.4.jar
+-/usr/share/hadoop/mapreduce/lib-examples/hsqldb-2.0.0.jar
+-/usr/share/hadoop/mapreduce/lib/guice-3.0.jar
+-/usr/share/hadoop/mapreduce/lib/guice-servlet-3.0.jar
+-/usr/share/hadoop/mapreduce/lib/hadoop-annotations-2.8.5.jar
+-/usr/share/hadoop/mapreduce/lib/hamcrest-core-1.3.jar
+-/usr/share/hadoop/mapreduce/lib/jackson-core-asl-1.9.13.jar
+-/usr/share/hadoop/mapreduce/lib/jackson-mapper-asl-1.9.13.jar
+-/usr/share/hadoop/mapreduce/lib/javax.inject-1.jar
+-/usr/share/hadoop/mapreduce/lib/jersey-core-1.9.jar
+-/usr/share/hadoop/mapreduce/lib/jersey-guice-1.9.jar
+-/usr/share/hadoop/mapreduce/lib/jersey-server-1.9.jar
+-/usr/share/hadoop/mapreduce/lib/junit-4.11.jar
+-/usr/share/hadoop/mapreduce/lib/leveldbjni-all-1.8.jar
+-/usr/share/hadoop/mapreduce/lib/log4j-1.2.17.jar
+-/usr/share/hadoop/mapreduce/lib/netty-3.6.2.Final.jar
+-/usr/share/hadoop/mapreduce/lib/paranamer-2.3.jar
+-/usr/share/hadoop/mapreduce/lib/protobuf-java-3.6.1.jar
+-/usr/share/hadoop/mapreduce/lib/snappy-java-1.0.4.1.jar
+-/usr/share/hadoop/mapreduce/lib/xz-1.0.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-app-2.8.5-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-app-2.8.5-test-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-common-2.8.5-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-common-2.8.5-test-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-core-2.8.5-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-core-2.8.5-test-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-hs-2.8.5-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-hs-2.8.5-test-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-hs-plugins-2.8.5-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-hs-plugins-2.8.5-test-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-jobclient-2.8.5-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-jobclient-2.8.5-test-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-shuffle-2.8.5-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-client-shuffle-2.8.5-test-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-examples-2.8.5-sources.jar
+-/usr/share/hadoop/mapreduce/sources/hadoop-mapreduce-examples-2.8.5-test-sources.jar
+-/usr/share/hadoop/tools/lib/activation-1.1.jar
+-/usr/share/hadoop/tools/lib/apacheds-i18n-2.0.0-M15.jar
+-/usr/share/hadoop/tools/lib/apacheds-kerberos-codec-2.0.0-M15.jar
+-/usr/share/hadoop/tools/lib/api-asn1-api-1.0.0-M20.jar
+-/usr/share/hadoop/tools/lib/api-util-1.0.0-M20.jar
+-/usr/share/hadoop/tools/lib/asm-3.2.jar
+-/usr/share/hadoop/tools/lib/avro-1.7.4.jar
+-/usr/share/hadoop/tools/lib/aws-java-sdk-core-1.10.6.jar
+-/usr/share/hadoop/tools/lib/aws-java-sdk-kms-1.10.6.jar
+-/usr/share/hadoop/tools/lib/aws-java-sdk-s3-1.10.6.jar
+-/usr/share/hadoop/tools/lib/azure-data-lake-store-sdk-2.2.3.jar
+-/usr/share/hadoop/tools/lib/azure-storage-2.2.0.jar
+-/usr/share/hadoop/tools/lib/commons-beanutils-1.7.0.jar
+-/usr/share/hadoop/tools/lib/commons-beanutils-core-1.8.0.jar
+-/usr/share/hadoop/tools/lib/commons-cli-1.2.jar
+-/usr/share/hadoop/tools/lib/commons-codec-1.4.jar
+-/usr/share/hadoop/tools/lib/commons-collections-3.2.2.jar
+-/usr/share/hadoop/tools/lib/commons-compress-1.4.1.jar
+-/usr/share/hadoop/tools/lib/commons-configuration-1.6.jar
+-/usr/share/hadoop/tools/lib/commons-digester-1.8.jar
+-/usr/share/hadoop/tools/lib/commons-httpclient-3.1.jar
+-/usr/share/hadoop/tools/lib/commons-io-2.4.jar
+-/usr/share/hadoop/tools/lib/commons-lang-2.6.jar
+-/usr/share/hadoop/tools/lib/commons-lang3-3.3.2.jar
+-/usr/share/hadoop/tools/lib/commons-logging-1.1.3.jar
+-/usr/share/hadoop/tools/lib/commons-math3-3.1.1.jar
+-/usr/share/hadoop/tools/lib/commons-net-3.1.jar
+-/usr/share/hadoop/tools/lib/curator-client-2.7.1.jar
+-/usr/share/hadoop/tools/lib/curator-framework-2.7.1.jar
+-/usr/share/hadoop/tools/lib/curator-recipes-2.7.1.jar
+-/usr/share/hadoop/tools/lib/gson-2.2.4.jar
+-/usr/share/hadoop/tools/lib/guava-11.0.2.jar
+-/usr/share/hadoop/tools/lib/hadoop-ant-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-archive-logs-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-archives-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-auth-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-aws-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-azure-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-azure-datalake-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-datajoin-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-distcp-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-extras-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-gridmix-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-openstack-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-rumen-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-sls-2.8.5.jar
+-/usr/share/hadoop/tools/lib/hadoop-streaming-2.8.5.jar
+-/usr/share/hadoop/tools/lib/htrace-core4-4.0.1-incubating.jar
+-/usr/share/hadoop/tools/lib/httpclient-4.5.2.jar
+-/usr/share/hadoop/tools/lib/httpcore-4.4.4.jar
+-/usr/share/hadoop/tools/lib/jackson-annotations-2.2.3.jar
+-/usr/share/hadoop/tools/lib/jackson-core-2.2.3.jar
+-/usr/share/hadoop/tools/lib/jackson-core-asl-1.9.13.jar
+-/usr/share/hadoop/tools/lib/jackson-databind-2.2.3.jar
+-/usr/share/hadoop/tools/lib/jackson-jaxrs-1.9.13.jar
+-/usr/share/hadoop/tools/lib/jackson-mapper-asl-1.9.13.jar
+-/usr/share/hadoop/tools/lib/jackson-xc-1.9.13.jar
+-/usr/share/hadoop/tools/lib/java-xmlbuilder-0.4.jar
+-/usr/share/hadoop/tools/lib/jaxb-api-2.2.2.jar
+-/usr/share/hadoop/tools/lib/jaxb-impl-2.2.3-1.jar
+-/usr/share/hadoop/tools/lib/jcip-annotations-1.0-1.jar
+-/usr/share/hadoop/tools/lib/jersey-core-1.9.jar
+-/usr/share/hadoop/tools/lib/jersey-json-1.9.jar
+-/usr/share/hadoop/tools/lib/jersey-server-1.9.jar
+-/usr/share/hadoop/tools/lib/jets3t-0.9.0.jar
+-/usr/share/hadoop/tools/lib/jettison-1.1.jar
+-/usr/share/hadoop/tools/lib/jetty-6.1.26.jar
+-/usr/share/hadoop/tools/lib/jetty-sslengine-6.1.26.jar
+-/usr/share/hadoop/tools/lib/jetty-util-6.1.26.jar
+-/usr/share/hadoop/tools/lib/joda-time-2.9.4.jar
+-/usr/share/hadoop/tools/lib/jsch-0.1.54.jar
+-/usr/share/hadoop/tools/lib/json-smart-1.3.1.jar
+-/usr/share/hadoop/tools/lib/jsp-api-2.1.jar
+-/usr/share/hadoop/tools/lib/jsr305-3.0.0.jar
+-/usr/share/hadoop/tools/lib/log4j-1.2.17.jar
+-/usr/share/hadoop/tools/lib/metrics-core-3.0.1.jar
+-/usr/share/hadoop/tools/lib/netty-3.6.2.Final.jar
+-/usr/share/hadoop/tools/lib/nimbus-jose-jwt-4.41.1.jar
+-/usr/share/hadoop/tools/lib/okhttp-2.4.0.jar
+-/usr/share/hadoop/tools/lib/okio-1.4.0.jar
+-/usr/share/hadoop/tools/lib/paranamer-2.3.jar
+-/usr/share/hadoop/tools/lib/protobuf-java-3.6.1.jar
+-/usr/share/hadoop/tools/lib/servlet-api-2.5.jar
+-/usr/share/hadoop/tools/lib/snappy-java-1.0.4.1.jar
+-/usr/share/hadoop/tools/lib/stax-api-1.0-2.jar
+-/usr/share/hadoop/tools/lib/xmlenc-0.52.jar
+-/usr/share/hadoop/tools/lib/xz-1.0.jar
+-/usr/share/hadoop/tools/lib/zookeeper-3.4.6.jar
+-/usr/share/hadoop/tools/sls/bin/rumen2sls.sh
+-/usr/share/hadoop/tools/sls/bin/slsrun.sh
+-/usr/share/hadoop/tools/sls/html/css/bootstrap.min.css
+-/usr/share/hadoop/tools/sls/html/css/bootstrap-responsive.min.css
+-/usr/share/hadoop/tools/sls/html/js/thirdparty/bootstrap.min.js
+-/usr/share/hadoop/tools/sls/html/js/thirdparty/d3-LICENSE
+-/usr/share/hadoop/tools/sls/html/js/thirdparty/d3.v3.js
+-/usr/share/hadoop/tools/sls/html/js/thirdparty/jquery.js
+-/usr/share/hadoop/tools/sls/html/showSimulationTrace.html
+-/usr/share/hadoop/tools/sls/html/simulate.html.template
+-/usr/share/hadoop/tools/sls/html/simulate.info.html.template
+-/usr/share/hadoop/tools/sls/html/track.html.template
+-/usr/share/hadoop/tools/sls/sample-conf/capacity-scheduler.xml
+-/usr/share/hadoop/tools/sls/sample-conf/fair-scheduler.xml
+-/usr/share/hadoop/tools/sls/sample-conf/log4j.properties
+-/usr/share/hadoop/tools/sls/sample-conf/sls-runner.xml
+-/usr/share/hadoop/tools/sls/sample-conf/yarn-site.xml
+-/usr/share/hadoop/tools/sls/sample-data/2jobs2min-rumen-jh.json
+-/usr/share/hadoop/tools/sources/hadoop-archive-logs-2.8.5-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-archive-logs-2.8.5-test-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-archives-2.8.5-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-archives-2.8.5-test-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-datajoin-2.8.5-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-datajoin-2.8.5-test-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-distcp-2.8.5-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-distcp-2.8.5-test-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-extras-2.8.5-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-extras-2.8.5-test-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-gridmix-2.8.5-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-gridmix-2.8.5-test-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-rumen-2.8.5-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-rumen-2.8.5-test-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-sls-2.8.5-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-sls-2.8.5-test-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-streaming-2.8.5-sources.jar
+-/usr/share/hadoop/tools/sources/hadoop-streaming-2.8.5-test-sources.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-api-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-applications-distributedshell-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-applications-unmanaged-am-launcher-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-client-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-common-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-registry-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-server-applicationhistoryservice-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-server-common-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-server-nodemanager-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-server-resourcemanager-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-server-sharedcachemanager-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-server-tests-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-server-timeline-pluginstorage-2.8.5.jar
+-/usr/share/hadoop/yarn/hadoop-yarn-server-web-proxy-2.8.5.jar
+-/usr/share/hadoop/yarn/lib/activation-1.1.jar
+-/usr/share/hadoop/yarn/lib/aopalliance-1.0.jar
+-/usr/share/hadoop/yarn/lib/asm-3.2.jar
+-/usr/share/hadoop/yarn/lib/commons-cli-1.2.jar
+-/usr/share/hadoop/yarn/lib/commons-codec-1.4.jar
+-/usr/share/hadoop/yarn/lib/commons-collections-3.2.2.jar
+-/usr/share/hadoop/yarn/lib/commons-compress-1.4.1.jar
+-/usr/share/hadoop/yarn/lib/commons-io-2.4.jar
+-/usr/share/hadoop/yarn/lib/commons-lang-2.6.jar
+-/usr/share/hadoop/yarn/lib/commons-logging-1.1.3.jar
+-/usr/share/hadoop/yarn/lib/commons-math-2.2.jar
+-/usr/share/hadoop/yarn/lib/curator-client-2.7.1.jar
+-/usr/share/hadoop/yarn/lib/curator-test-2.7.1.jar
+-/usr/share/hadoop/yarn/lib/guava-11.0.2.jar
+-/usr/share/hadoop/yarn/lib/guice-3.0.jar
+-/usr/share/hadoop/yarn/lib/guice-servlet-3.0.jar
+-/usr/share/hadoop/yarn/lib/jackson-core-asl-1.9.13.jar
+-/usr/share/hadoop/yarn/lib/jackson-jaxrs-1.9.13.jar
+-/usr/share/hadoop/yarn/lib/jackson-mapper-asl-1.9.13.jar
+-/usr/share/hadoop/yarn/lib/jackson-xc-1.9.13.jar
+-/usr/share/hadoop/yarn/lib/javassist-3.18.1-GA.jar
+-/usr/share/hadoop/yarn/lib/javax.inject-1.jar
+-/usr/share/hadoop/yarn/lib/jaxb-api-2.2.2.jar
+-/usr/share/hadoop/yarn/lib/jaxb-impl-2.2.3-1.jar
+-/usr/share/hadoop/yarn/lib/jersey-client-1.9.jar
+-/usr/share/hadoop/yarn/lib/jersey-core-1.9.jar
+-/usr/share/hadoop/yarn/lib/jersey-guice-1.9.jar
+-/usr/share/hadoop/yarn/lib/jersey-json-1.9.jar
+-/usr/share/hadoop/yarn/lib/jersey-server-1.9.jar
+-/usr/share/hadoop/yarn/lib/jettison-1.1.jar
+-/usr/share/hadoop/yarn/lib/jetty-6.1.26.jar
+-/usr/share/hadoop/yarn/lib/jetty-util-6.1.26.jar
+-/usr/share/hadoop/yarn/lib/jsr305-3.0.0.jar
+-/usr/share/hadoop/yarn/lib/leveldbjni-all-1.8.jar
+-/usr/share/hadoop/yarn/lib/log4j-1.2.17.jar
+-/usr/share/hadoop/yarn/lib/netty-3.6.2.Final.jar
+-/usr/share/hadoop/yarn/lib/protobuf-java-3.6.1.jar
+-/usr/share/hadoop/yarn/lib/servlet-api-2.5.jar
+-/usr/share/hadoop/yarn/lib/stax-api-1.0-2.jar
+-/usr/share/hadoop/yarn/lib/xz-1.0.jar
+-/usr/share/hadoop/yarn/lib/zookeeper-3.4.6.jar
+-/usr/share/hadoop/yarn/lib/zookeeper-3.4.6-tests.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-api-2.8.5-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-api-2.8.5-test-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-applications-distributedshell-2.8.5-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-applications-distributedshell-2.8.5-test-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-applications-unmanaged-am-launcher-2.8.5-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-applications-unmanaged-am-launcher-2.8.5-test-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-client-2.8.5-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-client-2.8.5-test-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-common-2.8.5-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-common-2.8.5-test-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-server-applicationhistoryservice-2.8.5-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-server-applicationhistoryservice-2.8.5-test-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-server-common-2.8.5-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-server-common-2.8.5-test-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-server-nodemanager-2.8.5-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-server-nodemanager-2.8.5-test-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-server-resourcemanager-2.8.5-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-server-resourcemanager-2.8.5-test-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-server-tests-2.8.5-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-server-tests-2.8.5-test-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-server-web-proxy-2.8.5-sources.jar
+-/usr/share/hadoop/yarn/sources/hadoop-yarn-server-web-proxy-2.8.5-test-sources.jar
+-/usr/share/hadoop/yarn/test/hadoop-yarn-server-tests-2.8.5-tests.jar
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Core_2.8.0.xml
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Common_2.6.0.xml
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Core_2.7.2.xml
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_Common_2.8.2.xml
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_JobClient_2.7.2.xml
++/usr/share/hadoop/mapreduce/jdiff/Apache_Hadoop_MapReduce_JobClient_2.8.0.xml
++/usr/share/hadoop/mapreduce/hadoop-mapreduce-client-hs-plugins-3.2.0.jar
++/usr/share/defaults/hadoop/workers
++/usr/share/defaults/hadoop/kms-log4j.properties
++/usr/share/defaults/hadoop/configuration.xsl
++/usr/share/defaults/hadoop/httpfs-env.sh
++/usr/share/defaults/hadoop/mapred-site.xml
++/usr/share/defaults/hadoop/hadoop-metrics2.properties
++/usr/share/defaults/hadoop/hadoop-user-functions.sh.example
++/usr/share/defaults/hadoop/httpfs-site.xml
++/usr/share/defaults/hadoop/log4j.properties
++/usr/share/defaults/hadoop/kms-env.sh
++/usr/share/defaults/hadoop/yarn-env.sh
++/usr/share/defaults/hadoop/ssl-client.xml.example
++/usr/share/defaults/hadoop/yarn-site.xml
++/usr/share/defaults/hadoop/container-executor.cfg
++/usr/share/defaults/hadoop/yarnservice-log4j.properties
++/usr/share/defaults/hadoop/core-site.xml
++/usr/share/defaults/hadoop/ssl-server.xml.example
++/usr/share/defaults/hadoop/user_ec_policies.xml.template
++/usr/share/defaults/hadoop/hadoop-env.sh
++/usr/share/defaults/hadoop/httpfs-log4j.properties
++/usr/share/defaults/hadoop/mapred-env.sh
++/usr/share/defaults/hadoop/capacity-scheduler.xml
++/usr/share/defaults/hadoop/mapred-queues.xml.template
++/usr/share/defaults/hadoop/kms-acls.xml
++/usr/share/defaults/hadoop/httpfs-signature.secret
++/usr/share/defaults/hadoop/hadoop-policy.xml
++/usr/share/defaults/hadoop/kms-site.xml
++/usr/share/defaults/hadoop/shellprofile.d/example.sh
++/usr/share/defaults/hadoop/hdfs-site.xml
++/usr/bin/yarn
++/usr/bin/hadoop
++/usr/bin/mapred
++/usr/bin/hdfs
++/usr/sbin/start-balancer.sh
++/usr/sbin/hadoop-daemon.sh
++/usr/sbin/yarn-daemon.sh
++/usr/sbin/stop-dfs.sh
++/usr/sbin/httpfs.sh
++/usr/sbin/mr-jobhistory-daemon.sh
++/usr/sbin/kms.sh
++/usr/sbin/start-all.sh
++/usr/sbin/hadoop-daemons.sh
++/usr/sbin/start-dfs.sh
++/usr/sbin/distribute-exclude.sh
++/usr/sbin/stop-balancer.sh
++/usr/sbin/stop-yarn.sh
++/usr/sbin/start-yarn.sh
++/usr/sbin/refresh-namenodes.sh
++/usr/sbin/yarn-daemons.sh
++/usr/sbin/workers.sh
++/usr/sbin/stop-all.sh
++/usr/sbin/FederationStateStore/MySQL/FederationStateStoreTables.sql
++/usr/sbin/FederationStateStore/MySQL/FederationStateStoreUser.sql
++/usr/sbin/FederationStateStore/MySQL/dropStoreProcedures.sql
++/usr/sbin/FederationStateStore/MySQL/FederationStateStoreStoredProcs.sql
++/usr/sbin/FederationStateStore/MySQL/dropDatabase.sql
++/usr/sbin/FederationStateStore/MySQL/FederationStateStoreDatabase.sql
++/usr/sbin/FederationStateStore/MySQL/dropTables.sql
++/usr/sbin/FederationStateStore/MySQL/dropUser.sql
++/usr/sbin/FederationStateStore/SQLServer/FederationStateStoreTables.sql
++/usr/sbin/FederationStateStore/SQLServer/FederationStateStoreStoreProcs.sql
++/usr/sbin/stop-secure-dns.sh
++/usr/sbin/start-secure-dns.sh
++/usr/libexec/tools/hadoop-archive-logs.sh
++/usr/libexec/tools/hadoop-extras.sh
++/usr/libexec/tools/hadoop-resourceestimator.sh
++/usr/libexec/tools/hadoop-gridmix.sh
++/usr/libexec/tools/hadoop-distcp.sh
++/usr/libexec/tools/hadoop-sls.sh
++/usr/libexec/tools/hadoop-aws.sh
++/usr/libexec/tools/hadoop-archives.sh
++/usr/libexec/tools/hadoop-streaming.sh
++/usr/libexec/tools/hadoop-rumen.sh
++/usr/libexec/hadoop-layout.sh.example
++/usr/libexec/mapred-config.sh
++/usr/libexec/hadoop-config.sh
++/usr/libexec/yarn-config.sh
++/usr/libexec/shellprofile.d/hadoop-azure-datalake.sh
++/usr/libexec/shellprofile.d/hadoop-s3guard.sh
++/usr/libexec/shellprofile.d/hadoop-archive-logs.sh
++/usr/libexec/shellprofile.d/hadoop-extras.sh
++/usr/libexec/shellprofile.d/hadoop-openstack.sh
++/usr/libexec/shellprofile.d/hadoop-azure.sh
++/usr/libexec/shellprofile.d/hadoop-kafka.sh
++/usr/libexec/shellprofile.d/hadoop-gridmix.sh
++/usr/libexec/shellprofile.d/hadoop-distcp.sh
++/usr/libexec/shellprofile.d/hadoop-kms.sh
++/usr/libexec/shellprofile.d/hadoop-mapreduce.sh
++/usr/libexec/shellprofile.d/hadoop-hdfs.sh
++/usr/libexec/shellprofile.d/hadoop-aliyun.sh
++/usr/libexec/shellprofile.d/hadoop-yarn.sh
++/usr/libexec/shellprofile.d/hadoop-aws.sh
++/usr/libexec/shellprofile.d/hadoop-archives.sh
++/usr/libexec/shellprofile.d/hadoop-httpfs.sh
++/usr/libexec/shellprofile.d/hadoop-streaming.sh
++/usr/libexec/shellprofile.d/hadoop-rumen.sh
++/usr/libexec/hadoop-functions.sh
++/usr/libexec/hdfs-config.sh
+diff --git a/buildreq_add b/buildreq_add
+index 947f979..1797536 100644
+--- a/buildreq_add
++++ b/buildreq_add
+@@ -1,36 +1,2 @@
+ # This file contains additional build requirements that did not get
+ # picked up automatically. One name per line, no whitespace.
+-apache-ant
+-jdk-bsh
+-jdk-cglib
+-jdk-doxia-integration-tools
+-jdk-easymock3
+-jdk-eclipse-eclipse
+-jdk-enforcer
+-jdk-felix
+-jdk-felix-osgi-foundation
+-jdk-glassfish-servlet-api
+-jdk-jna
+-jdk-jsch
+-jdk-jsch-agent-proxy
+-jdk-maven-antrun-plugin
+-jdk-maven-artifact-resolver
+-jdk-maven-common-artifact-filters
+-jdk-maven-compiler-plugin
+-jdk-maven-filtering
+-jdk-maven-jar-plugin
+-jdk-maven-javadoc-plugin
+-jdk-maven-plugin-testing
+-jdk-maven-plugin-tools
+-jdk-maven-remote-resources-plugin
+-jdk-maven-reporting-exec
+-jdk-maven-resources-plugin
+-jdk-maven-shared-incremental
+-jdk-maven-site-plugin
+-jdk-objenesis
+-jdk-parboiled
+-jdk-pegdown
+-jdk-plexus-compiler
+-jdk-plexus-interactivity
+-jdk-plexus-resources
+-jdk-surefire
+diff --git a/protobuf-3.6.1-hadoop-3.2.0-On-CLR.patch b/protobuf-3.6.1-hadoop-3.2.0-On-CLR.patch
+new file mode 100644
+index 0000000..a2a7b01
+--- /dev/null
++++ b/protobuf-3.6.1-hadoop-3.2.0-On-CLR.patch
+@@ -0,0 +1,125 @@
++diff --git a/hadoop-hdfs-project/hadoop-hdfs-rbf/src/main/java/org/apache/hadoop/hdfs/server/federation/store/protocol/impl/pb/FederationProtocolPBTranslator.java b/hadoop-hdfs-project/hadoop-hdfs-rbf/src/main/java/org/apache/hadoop/hdfs/server/federation/store/protocol/impl/pb/FederationProtocolPBTranslator.java
++index baad11352f8..cd2ec4dc9e8 100644
++--- a/hadoop-hdfs-project/hadoop-hdfs-rbf/src/main/java/org/apache/hadoop/hdfs/server/federation/store/protocol/impl/pb/FederationProtocolPBTranslator.java
+++++ b/hadoop-hdfs-project/hadoop-hdfs-rbf/src/main/java/org/apache/hadoop/hdfs/server/federation/store/protocol/impl/pb/FederationProtocolPBTranslator.java
++@@ -22,7 +22,7 @@
++ 
++ import org.apache.commons.codec.binary.Base64;
++ 
++-import com.google.protobuf.GeneratedMessage;
+++import com.google.protobuf.GeneratedMessageV3;
++ import com.google.protobuf.Message;
++ import com.google.protobuf.Message.Builder;
++ import com.google.protobuf.MessageOrBuilder;
++@@ -31,7 +31,7 @@
++  * Helper class for setting/getting data elements in an object backed by a
++  * protobuf implementation.
++  */
++-public class FederationProtocolPBTranslator<P extends GeneratedMessage,
+++public class FederationProtocolPBTranslator<P extends GeneratedMessageV3,
++     B extends Builder, T extends MessageOrBuilder> {
++ 
++   /** Optional proto byte stream used to create this object. */
++diff --git a/hadoop-tools/hadoop-fs2img/src/main/java/org/apache/hadoop/hdfs/server/namenode/ImageWriter.java b/hadoop-tools/hadoop-fs2img/src/main/java/org/apache/hadoop/hdfs/server/namenode/ImageWriter.java
++index d4a632cf06d..bb36e522b92 100644
++--- a/hadoop-tools/hadoop-fs2img/src/main/java/org/apache/hadoop/hdfs/server/namenode/ImageWriter.java
+++++ b/hadoop-tools/hadoop-fs2img/src/main/java/org/apache/hadoop/hdfs/server/namenode/ImageWriter.java
++@@ -266,7 +266,7 @@ synchronized void writeDirEntry(DirEntry e) throws IOException {
++     e.writeDelimitedTo(dirs);
++   }
++ 
++-  private static int getOndiskSize(com.google.protobuf.GeneratedMessage s) {
+++  private static int getOndiskSize(com.google.protobuf.GeneratedMessageV3 s) {
++     return CodedOutputStream.computeRawVarint32Size(s.getSerializedSize())
++         + s.getSerializedSize();
++   }
++diff --git a/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-common/src/main/java/org/apache/hadoop/yarn/api/pb/PlacementConstraintToProtoConverter.java b/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-common/src/main/java/org/apache/hadoop/yarn/api/pb/PlacementConstraintToProtoConverter.java
++index 30f774136dc..caf254a2b3e 100644
++--- a/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-common/src/main/java/org/apache/hadoop/yarn/api/pb/PlacementConstraintToProtoConverter.java
+++++ b/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-common/src/main/java/org/apache/hadoop/yarn/api/pb/PlacementConstraintToProtoConverter.java
++@@ -41,7 +41,7 @@
++ import org.apache.hadoop.yarn.proto.YarnProtos.SimplePlacementConstraintProto;
++ import org.apache.hadoop.yarn.proto.YarnProtos.TimedPlacementConstraintProto;
++ 
++-import com.google.protobuf.GeneratedMessage;
+++import com.google.protobuf.GeneratedMessageV3;
++ 
++ /**
++  * {@code PlacementConstraintToProtoConverter} generates a
++@@ -50,7 +50,7 @@
++  */
++ @Private
++ public class PlacementConstraintToProtoConverter
++-    implements PlacementConstraint.Visitor<GeneratedMessage> {
+++    implements PlacementConstraint.Visitor<GeneratedMessageV3> {
++ 
++   private PlacementConstraint placementConstraint;
++ 
++@@ -65,7 +65,7 @@ public PlacementConstraintProto convert() {
++   }
++ 
++   @Override
++-  public GeneratedMessage visit(SingleConstraint constraint) {
+++  public GeneratedMessageV3 visit(SingleConstraint constraint) {
++     SimplePlacementConstraintProto.Builder sb =
++         SimplePlacementConstraintProto.newBuilder();
++ 
++@@ -94,7 +94,7 @@ public GeneratedMessage visit(SingleConstraint constraint) {
++   }
++ 
++   @Override
++-  public GeneratedMessage visit(TargetExpression target) {
+++  public GeneratedMessageV3 visit(TargetExpression target) {
++     PlacementConstraintTargetProto.Builder tb =
++         PlacementConstraintTargetProto.newBuilder();
++ 
++@@ -109,16 +109,16 @@ public GeneratedMessage visit(TargetExpression target) {
++   }
++ 
++   @Override
++-  public GeneratedMessage visit(TargetConstraint constraint) {
+++  public GeneratedMessageV3 visit(TargetConstraint constraint) {
++     throw new YarnRuntimeException("Unexpected TargetConstraint found.");
++   }
++ 
++   @Override
++-  public GeneratedMessage visit(CardinalityConstraint constraint) {
+++  public GeneratedMessageV3 visit(CardinalityConstraint constraint) {
++     throw new YarnRuntimeException("Unexpected CardinalityConstraint found.");
++   }
++ 
++-  private GeneratedMessage visitAndOr(
+++  private GeneratedMessageV3 visitAndOr(
++       CompositeConstraint<AbstractConstraint> composite, CompositeType type) {
++     CompositePlacementConstraintProto.Builder cb =
++         CompositePlacementConstraintProto.newBuilder();
++@@ -137,17 +137,17 @@ private GeneratedMessage visitAndOr(
++   }
++ 
++   @Override
++-  public GeneratedMessage visit(And constraint) {
+++  public GeneratedMessageV3 visit(And constraint) {
++     return visitAndOr(constraint, CompositeType.AND);
++   }
++ 
++   @Override
++-  public GeneratedMessage visit(Or constraint) {
+++  public GeneratedMessageV3 visit(Or constraint) {
++     return visitAndOr(constraint, CompositeType.OR);
++   }
++ 
++   @Override
++-  public GeneratedMessage visit(DelayedOr constraint) {
+++  public GeneratedMessageV3 visit(DelayedOr constraint) {
++     CompositePlacementConstraintProto.Builder cb =
++         CompositePlacementConstraintProto.newBuilder();
++ 
++@@ -166,7 +166,7 @@ public GeneratedMessage visit(DelayedOr constraint) {
++   }
++ 
++   @Override
++-  public GeneratedMessage visit(TimedPlacementConstraint constraint) {
+++  public GeneratedMessageV3 visit(TimedPlacementConstraint constraint) {
++     TimedPlacementConstraintProto.Builder tb =
++         TimedPlacementConstraintProto.newBuilder();
++ 
+diff --git a/upstream b/upstream
+index d549576..7a6d9ef 100644
+--- a/upstream
++++ b/upstream
+@@ -1,3 +1,3 @@
+-aad508d1a5fc1f6c7f56fddf76c91466c23d6b09/hadoop-2.8.5-src.tar.gz
++716d01e9fd6c36456b59b3fb68a94362a931dfc6/hadoop-3.2.0-src.tar.gz
+ 88dbeb0823e14e3298a2c195cce454ebff3f61f7/apache-tomcat-6.0.48.tar.gz
+ 0294104aaf1781d6a56a07d561e792c5d0c95f45/netty-all-4.0.23.Final.jar
+-- 
+2.21.0

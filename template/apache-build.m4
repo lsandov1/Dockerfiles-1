@@ -1,3 +1,4 @@
+
 FROM clearlinux/stacks-clearlinux:30960 as apache-build
 
 RUN swupd bundle-add java11-basic curl patch R-basic R-extras time-server-basic machine-learning-pytorch \
@@ -7,7 +8,7 @@ RUN mkdir -p /root/.m2/ /usr/local/bin/apache-spark/ /usr/local/bin/apache-hadoo
 WORKDIR /home
 
 # Install Maven
-RUN curl -o /opt/apache-maven.tar.gz --silent http://mirror.reverse.net/pub/apache/maven/maven-3/3.6.2/binaries/apache-maven-3.6.2-bin.tar.gz
+RUN curl -o /opt/apache-maven.tar.gz http://mirror.reverse.net/pub/apache/maven/maven-3/3.6.2/binaries/apache-maven-3.6.2-bin.tar.gz
 RUN tar xzf /opt/apache-maven.tar.gz --directory /opt
 ENV M2_HOME="/opt/apache-maven-3.6.2"
 ENV PATH=${PATH}:/opt/apache-maven-3.6.2/bin

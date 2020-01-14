@@ -1,4 +1,5 @@
-# COMMON BUILD TOOLS
+
+# Common Build Tools
 ARG swupd_args
 
 # Move to latest Clear Linux release to ensure
