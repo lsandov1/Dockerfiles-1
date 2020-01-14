@@ -7,12 +7,22 @@ fi
 BUILD_MP3LAME="${1:-ON}"
 BUILD_FDKAAC="${2:-ON}"
 ONLY_DOCKERFILES="${3:-OFF}"
+BUILD_X264="${4:-OFF}"
 
-if echo ${IMAGE} | grep -q "dev"; then
+case ${IMAGE} in
+  *"dars"*)
+    TEMPLATE="${DIR}/../../../../template/dars/"
+  ;;
+  *"mers"*)
+    TEMPLATE="${DIR}/../../../template/mers/"
+  ;;
+  *"dev"*)
     TEMPLATE="${DIR}/../../../template/"
-else
+  ;;
+  *)
     TEMPLATE="${DIR}/../../../../template/"
-fi
+  ;;
+esac
 
 PREFIX="${PREFIX:-openvisualcloud}"
 
