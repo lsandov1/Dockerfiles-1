@@ -1,3 +1,5 @@
+###################### install-spark template ######################
+
 # Install Spark
 RUN mkdir -p /usr/share/apache-spark/ && \
     tar -xf /tmp/spark-*.tgz \

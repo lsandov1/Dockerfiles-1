@@ -29,6 +29,8 @@ PREFIX="${PREFIX:-openvisualcloud}"
 for m4file in "${DIR}"/*.m4; do
     if test -f "$m4file"; then
        m4 "-I${TEMPLATE}" -DDOCKER_IMAGE=${IMAGE} -DBUILD_MP3LAME=${BUILD_MP3LAME} -DBUILD_FDKAAC=${BUILD_FDKAAC} "${m4file}" > "${m4file%\.m4}"
+       # Can we add here append at the end of the m4 file an strins like: "###### name-of-the-m4-file template #####" just for track pieces
+       # of code inside Dockerfile template and easy debbug of them
     fi
 done || echo
 

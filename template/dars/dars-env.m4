@@ -1,3 +1,4 @@
+###################### dars-env template ######################
 # Configure openjdk11
 ENV JAVA_HOME=/usr/lib/jvm/java-1.11.0-openjdk
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
