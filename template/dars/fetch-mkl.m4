@@ -1,3 +1,5 @@
+###################### fetch-mkl template ######################
+
 RUN swupd bundle-add curl
 # fetch MKL library and wrapper
 RUN URL='http://registrationcenter-download.intel.com/akdlm/irc_nas/tec/15816' && \

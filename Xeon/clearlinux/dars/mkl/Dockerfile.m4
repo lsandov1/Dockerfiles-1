@@ -1,6 +1,3 @@
-# Build Stage: apache tools (build first so cache is reused by dars/openblas)
-include(apache-build.m4)
-
 # Build Stage: install tools
 FROM clearlinux:latest AS build
 WORKDIR /home
